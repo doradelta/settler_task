@@ -1,0 +1,10 @@
+[package]
+name = "settler"
+version = "0.1.0"
+edition = "2021"
+description = "Fair markup for firm cross-chain settler quotes: pricing model, quote engine, simulated curve"
+
+[dependencies]
+rand = "0.8"
+rand_distr = "0.4"
+statrs = { version = "0.18", default-features = false }
