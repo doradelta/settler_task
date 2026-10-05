@@ -79,24 +79,25 @@ code{font-size:.9em;background:#eef1f5;padding:1px 5px;border-radius:4px}
 <div class="read"><span>strike <b id="k1"></b></span><span>you keep per uninformed fill at today's rate <b id="k2"></b></span><span>expected P&amp;L per quote under the model, 5-min window <b id="k3"></b></span><span>fair markup <b id="k4"></b></span></div>
 </div>
 
-<h2>2 · Finite inventory, many live quotes</h2>
-<p>Each live quote reserves one payment. With capacity C and n live quotes, the awards A are the uninformed (they always fill) plus the informed, who watch the same rate path and fill together with probability q or not at all. The n-th quote adds ΔE<sub>n</sub> = q·1{n &gt; C} + (1−p)(1−q)·P(Bin(n−1, 1−p) ≥ C) expected unfunded awards, non-decreasing in n, so expected profit n·p_fill·margin − F·E[(A − C)⁺] is concave and the optimum is a critical fractile: keep quoting while p_fill·margin ≥ F·ΔE<sub>n</sub>. F = ∞ is hard reservation (n = C).</p>
+<h2>2 · Finite capital, payments of different sizes</h2>
+<p>With one payment size there is nothing to decide: quote first-come up to capacity, never naked. The decision appears when sizes vary. Gas is a fixed cost per fill, so a quote of size a earns α·a − β: small payments lose money, and every quote ties up a·T of capital-time. Which auctions to quote is a fractional knapsack: maximise Σ x·(α·a − β) subject to Σ x·a·T ≤ C. Its solution is greedy by yield (profit per unit of capital per second), which rises with size, so the optimal policy is a threshold: <b>quote iff a ≥ a_min</b>. The LP's dual λ* is the <b>bid price</b>: what every unit of capital must earn per hour. Capital slack: λ* = 0 and a_min is the gas break-even size. Capital scarce: a_min rises until demand just fills the capital.</p>
 <div class="card">
 <div class="ctrl">
-  <label>capacity C, payments <b id="cV"></b><input id="c" type="range" min="1" max="40" step="1" value="10"></label>
-  <label>p informed <b id="p2V"></b><input id="p2" type="range" min="0" max="0.9" step="0.05" value="0.3"></label>
-  <label>q, informed exercise together <b id="q2V"></b><input id="q2" type="range" min="0" max="0.5" step="0.01" value="0"></label>
-  <label>margin per fill, bp <b id="mgV"></b><input id="mg" type="range" min="1" max="50" step="1" value="10"></label>
-  <label>penalty F, % of notional <b id="fV"></b><input id="f" type="range" min="0.1" max="10" step="0.1" value="1"></label>
+  <label>capital C, units <b id="capV"></b><input id="cap" type="range" min="3.7" max="6" step="0.05" value="4.3"></label>
+  <label>auctions per second <b id="lamV"></b><input id="lam" type="range" min="0.5" max="5" step="0.1" value="2"></label>
+  <label>quoted markup, bp <b id="m2V"></b><input id="m2" type="range" min="50" max="400" step="5" value="150"></label>
+  <label>window W, s <b id="w2V"></b><input id="w2" type="range" min="5" max="300" step="5" value="60"></label>
+  <label>size spread (lognormal σ around 1,000) <b id="sdV"></b><input id="sd" type="range" min="0.3" max="1.5" step="0.05" value="0.8"></label>
 </div>
-<div class="wrap"><svg id="c2" viewBox="0 0 900 320"></svg><div id="t2" class="tip" hidden></div></div>
-<div class="read"><span>p_fill <b id="s0"></b></span><span>hard reservation <b id="s1"></b></span><span>newsvendor n* <b id="s2"></b></span><span>P(overdraft) at n* <b id="s3"></b></span><span>expected unfunded fills <b id="s4"></b></span></div>
+<div class="wrap"><svg id="c2" viewBox="0 0 900 330"></svg><div id="t2" class="tip" hidden></div></div>
+<div class="leg"><span><i style="background:var(--blue)"></i>yield: profit per unit of capital, bp per hour</span><span><i style="background:#c9d2de;height:9px;width:14px"></i>where auctions arrive (size distribution)</span><span><i style="background:var(--orange);height:1px"></i>bid price λ*</span><span><i style="background:#dce8f8;height:9px;width:14px"></i>quoted</span></div>
+<div class="read"><span>quote sizes ≥ <b id="a1"></b></span><span>bid price <b id="a2"></b></span><span>auctions quoted <b id="a3"></b></span><span>capital in use <b id="a4"></b></span><span>profit per hour (fluid) <b id="a5"></b></span></div>
 </div>
 
-<h2>Why the window costs inventory, not price</h2>
-<p>Hard reservation, capacity 10, spec market: fills per second from the engine against the renewal closed form C·p_fill / (held + 1/λ). Longer windows keep slots reserved but idle.</p>
-<div class="card"><svg id="c3" viewBox="0 0 900 260"></svg>
-<div class="leg"><span><i style="background:var(--blue)"></i>closed form</span><span><i class="dot"></i>engine, 20,000 s</span></div></div>
+<h2>What selection is worth</h2>
+<p>Profit per hour against capital. Line: the fluid LP for the threshold policy, an upper bound that is exact once capital is large next to a payment. Dots: the engine run for 20,000 s with payments drawn from the same distribution (shown at the default sliders), for the threshold policy and for "quote everything you can fund". The naive policy loses money when capital is tight: the payments that still fit are the small ones, and those are the ones that do not cover gas.</p>
+<div class="card"><div class="wrap"><svg id="c3" viewBox="0 0 900 280"></svg><div id="t3" class="tip" hidden></div></div>
+<div class="leg"><span><i style="background:var(--blue)"></i>bid-price threshold, fluid LP</span><span><i class="dot" style="background:var(--blue)"></i>engine, threshold</span><span><i class="dot" style="background:var(--orange)"></i>engine, quote everything you can fund</span></div></div>
 <p class="sub">Seed 20261002. <code>python3 run.py</code> regenerates every number on this page.</p>
 </main>
 <script src="data.js"></script>
@@ -118,8 +119,8 @@ function binomPmf(n,p){p=Math.min(Math.max(p,1e-12),1-1e-12);const out=[];for(le
 /* ---------- pricing ---------- */
 const N=1000,L=24,LOCK=144,R=0.10,YEAR=31557600;
 function wstd(W,P){return P.kappa>0?P.sigma*Math.sqrt((1-Math.exp(-2*P.kappa*W))/(2*P.kappa)):P.sigma*Math.sqrt(W)}
-function pnl(m,W,P){const K=1+m,drift=1+(P.kappa>0?0:P.sigma*P.sigma*(W/4+L/2));const un=N*(1-drift/K)-P.gas;const[C,q]=tailCall(m,wstd(W,P),P.nu);const inf=-(N/K*C+P.gas*q);
-  const held=(1-P.p)*(W/2+L+LOCK)+P.p*(W+q*(L+LOCK));return[(1-P.p)*un+P.p*inf-R*N*held/YEAR,q]}
+function pnl(m,W,P,A){const Nn=A||N,K=1+m,drift=1+(P.kappa>0?0:P.sigma*P.sigma*(W/4+L/2));const un=Nn*(1-drift/K)-P.gas;const[C,q]=tailCall(m,wstd(W,P),P.nu);const inf=-(Nn/K*C+P.gas*q);
+  const held=(1-P.p)*(W/2+L+LOCK)+P.p*(W+q*(L+LOCK));return[(1-P.p)*un+P.p*inf-R*Nn*held/YEAR,q,held]}
 function fair(W,P){let lo=0,hi=0.5;for(let i=0;i<60;i++){const mid=(lo+hi)/2;if(pnl(mid,W,P)[0]>0)hi=mid;else lo=mid}return(lo+hi)/2}
 
 /* ---------- svg helpers ---------- */
@@ -195,46 +196,66 @@ function draw1p(){
 ['mk','g','p','sg','nu','hl'].forEach(id=>$(id).addEventListener('input',draw1p));
 $('g').addEventListener('input',()=>{$('mk').value=(fair(300,curP())*1e4).toFixed(1);draw1p()});
 
-/* ---------- chart 2: newsvendor overbooking ---------- */
+/* ---------- chart 2: bid-price threshold on payment size ---------- */
+const MED=1000;
+function lnMeanAbove(x,sd){const mu=Math.log(MED);return Math.exp(mu+sd*sd/2)*nsf((Math.log(Math.max(x,1e-9))-mu-sd*sd)/sd)}
+function lnShareAbove(x,sd){return nsf((Math.log(Math.max(x,1e-9))-Math.log(MED))/sd)}
+function bidPrice(m,W,P,C,lam,sd){
+  const p1=pnl(m,W,P,1),p2=pnl(m,W,P,2),a=p2[0]-p1[0],b=p2[0]-2*p1[0],T=p1[2];
+  const mean=x=>lnMeanAbove(x,sd)-lnMeanAbove(C,sd),share=x=>lnShareAbove(x,sd)-lnShareAbove(C,sd),usage=x=>lam*T*mean(x),profit=x=>lam*(a*mean(x)-b*share(x));
+  const aGas=a>0?b/a:Infinity;if(!isFinite(aGas)||aGas>=C)return{a,b,T,aGas,x:Infinity,bp:0,binds:false,share:0,profit:0,util:0};
+  let x=aGas,bp=0,binds=false;
+  if(usage(aGas)>C){let lo=aGas,hi=C;for(let i=0;i<80;i++){const mid=Math.sqrt(lo*hi);if(usage(mid)>C)lo=mid;else hi=mid}x=Math.sqrt(lo*hi);bp=(a*x-b)/(x*T);binds=true}
+  return{a,b,T,aGas,x,bp,binds,share:share(x),profit:profit(x),util:Math.min(1,usage(x)/C)}
+}
+function cur2(){return{C:Math.pow(10,+$('cap').value),lam:+$('lam').value,m:+$('m2').value/1e4,W:+$('w2').value,sd:+$('sd').value}}
 function draw2(){
-  const C=+$('c').value,p=+$('p2').value,q=+$('q2').value,margin=+$('mg').value/1e4*N,F=+$('f').value/100*N,pf=1-p*(1-q);
-  $('cV').textContent=C;$('p2V').textContent=p.toFixed(2);$('q2V').textContent=q.toFixed(2);$('mgV').textContent=$('mg').value+' bp';$('fV').textContent=$('f').value+' %';
-  const binTail=(n,pp,k)=>{if(k<=0)return 1;if(k>n)return 0;const pm=binomPmf(n,pp);let t=0;for(let j=k;j<=n;j++)t+=pm[j];return t};
-  const stat=n=>{const pm=binomPmf(n,p);let tail=n>=C?q:0,e=q*Math.max(n-C,0);pm.forEach((w,m)=>{const a=n-m;if(a>=C)tail+=w*(1-q);e+=w*(1-q)*Math.max(a-C,0)});return[tail,e]}; // P(A_n >= C), E[(A_n - C)+]
-  const dE=n=>(n>C?q:0)+(1-p)*(1-q)*binTail(n-1,1-p,C); // extra unfunded award from the n-th quote
-  const bounded=margin<F&&pf>0;let nstar=C;if(bounded){while(F*dE(nstar+1)<=pf*margin&&nstar<C+300)nstar++}
-  const nmax=Math.min(Math.max(C+10,nstar+3),C+60),ns=[],prof=[],pov=[],eov=[];
-  for(let n=C;n<=nmax;n++){const[t,e]=stat(n);ns.push(n);prof.push(n*pf*margin-F*e);pov.push(t);eov.push(e)}
-  const svg=$('c2');clear(svg);const ML=70,MR=20,MT=16,MB=44,W_=900,H=320,pw=W_-ML-MR,ph=H-MT-MB;
-  let hi=Math.max(...prof),lo=Math.max(Math.min(...prof),-1.5*Math.max(hi,0.1));const pad=(hi-lo)*0.1||1;lo-=pad;hi+=pad;
-  const X=n=>ML+(n-ns[0]+0.5)/(ns.length)*pw,Y=v=>MT+(1-(Math.max(v,lo)-lo)/(hi-lo))*ph,bw=pw/ns.length*0.72;
-  ticks(lo,hi,5).forEach(v=>{el(svg,'line',{x1:ML,x2:ML+pw,y1:Y(v),y2:Y(v),stroke:'#e6eaef'});el(svg,'text',{x:ML-8,y:Y(v)+4,'text-anchor':'end'},v.toFixed(Math.abs(hi-lo)<5?2:1))});
-  if(lo<0&&hi>0)el(svg,'line',{x1:ML,x2:ML+pw,y1:Y(0),y2:Y(0),stroke:'#6b7685'});
-  ns.forEach((n,i)=>{const v=prof[i],y0=Y(v),top=Math.min(y0,Y(0)),h=Math.abs(Y(0)-y0);
-    el(svg,'rect',{x:X(n)-bw/2,y:top,width:bw,height:Math.max(h,0),rx:3,fill:n<=C?'#9aa3ad':n<=nstar?'var(--blue)':'#f0b79a'});
-    if(i%Math.ceil(ns.length/24)===0)el(svg,'text',{x:X(n),y:MT+ph+18,'text-anchor':'middle'},n)});
-  el(svg,'line',{x1:X(nstar),x2:X(nstar),y1:MT,y2:MT+ph,stroke:'var(--orange)','stroke-dasharray':'4 4','stroke-width':1.5});el(svg,'text',{x:X(nstar)+6,y:MT+14,fill:'var(--orange)'},'n* = '+nstar);
-  el(svg,'text',{x:ML+pw/2,y:H-6,'text-anchor':'middle',fill:'#6b7685'},'live quotes n   (grey: within capacity · blue: overbooking that pays · peach: the marginal quote loses money)');el(svg,'text',{x:14,y:MT+ph/2,transform:`rotate(-90 14 ${MT+ph/2})`,'text-anchor':'middle',fill:'#6b7685'},'expected profit per round, units');
-  const i=ns.indexOf(nstar);$('s0').textContent=pf.toFixed(2);$('s1').textContent='n = '+C;$('s2').textContent=!bounded?'n = '+C+' (margin ≥ F: no finite optimum, stay hard-reserved)':nstar+(nstar>C?' (+'+(nstar-C)+')':' (no overbooking)');$('s3').textContent=(pov[i]*100).toFixed(1)+' %';$('s4').textContent=eov[i].toFixed(3);
+  const P=curP(),S=cur2(),B=bidPrice(S.m,S.W,P,S.C,S.lam,S.sd);
+  $('capV').textContent=Math.round(S.C).toLocaleString('en-US');$('lamV').textContent=S.lam.toFixed(1);$('m2V').textContent=$('m2').value+' bp';$('w2V').textContent=S.W+' s';$('sdV').textContent=S.sd.toFixed(2);
+  const svg=$('c2');clear(svg);const ML=70,MR=20,MT=16,MB=44,W_=900,H=330,pw=W_-ML-MR,ph=H-MT-MB;
+  const xlo=MED/20,xhi=MED*50,X=a=>ML+(Math.log(a)-Math.log(xlo))/(Math.log(xhi)-Math.log(xlo))*pw;
+  const yld=a=>(B.a*a-B.b)/(a*B.T)*3600*1e4,top=Math.max(B.a/B.T*3600*1e4,1e-6);
+  let hi=top*1.1,lo=-0.6*top;const Y=v=>MT+(1-(Math.max(v,lo)-lo)/(hi-lo))*ph;
+  // size distribution as a background shape (density of ln a)
+  const pts=[];for(let i=0;i<=200;i++){const la=Math.log(xlo)+(Math.log(xhi)-Math.log(xlo))*i/200;pts.push([Math.exp(la),Math.exp(-0.5*Math.pow((la-Math.log(MED))/S.sd,2))])}
+  if(isFinite(B.x))el(svg,'rect',{x:X(Math.min(Math.max(B.x,xlo),xhi)),y:MT,width:Math.max(0,ML+pw-X(Math.min(Math.max(B.x,xlo),xhi))),height:ph,fill:'#dce8f8',opacity:0.6});
+  el(svg,'path',{d:'M'+X(xlo)+' '+(MT+ph)+' '+pts.map(q=>'L'+X(q[0]).toFixed(1)+' '+(MT+ph-q[1]*ph*0.55).toFixed(1)).join(' ')+' L'+X(xhi)+' '+(MT+ph)+'Z',fill:'#c9d2de',opacity:0.7});
+  ticks(lo,hi,6).forEach(v=>{el(svg,'line',{x1:ML,x2:ML+pw,y1:Y(v),y2:Y(v),stroke:'#e6eaef'});el(svg,'text',{x:ML-8,y:Y(v)+4,'text-anchor':'end'},v.toFixed(0))});
+  [50,100,200,500,1000,2000,5000,10000,20000,50000].forEach(v=>{el(svg,'line',{x1:X(v),x2:X(v),y1:MT+ph,y2:MT+ph+5,stroke:'#6b7685'});el(svg,'text',{x:X(v),y:MT+ph+19,'text-anchor':'middle'},v.toLocaleString('en-US'))});
+  el(svg,'line',{x1:ML,x2:ML+pw,y1:Y(0),y2:Y(0),stroke:'#6b7685'});
+  const line=[];for(let i=0;i<=200;i++){const a=xlo*Math.pow(xhi/xlo,i/200);line.push((i?'L':'M')+X(a).toFixed(1)+' '+Y(yld(a)).toFixed(1))}
+  el(svg,'path',{d:line.join(' '),fill:'none',stroke:'var(--blue)','stroke-width':2.4});
+  if(B.binds){el(svg,'line',{x1:ML,x2:ML+pw,y1:Y(B.bp*3600*1e4),y2:Y(B.bp*3600*1e4),stroke:'var(--orange)','stroke-dasharray':'5 4','stroke-width':1.5});el(svg,'text',{x:ML+8,y:Y(B.bp*3600*1e4)-6,fill:'var(--orange)'},'bid price λ* = '+(B.bp*3600*1e4).toFixed(0)+' bp/h')}
+  if(isFinite(B.x)){const xx=Math.min(Math.max(B.x,xlo),xhi);el(svg,'line',{x1:X(xx),x2:X(xx),y1:MT,y2:MT+ph,stroke:'#142033','stroke-dasharray':'4 4'});el(svg,'text',{x:X(xx)+6,y:MT+14,fill:'#142033'},'quote from '+Math.round(B.x).toLocaleString('en-US')+(B.binds?' (capital binds)':' (gas break-even)'))}
+  el(svg,'text',{x:ML+pw/2,y:H-6,'text-anchor':'middle',fill:'#6b7685'},'payment size, source units (log scale)');el(svg,'text',{x:14,y:MT+ph/2,transform:`rotate(-90 14 ${MT+ph/2})`,'text-anchor':'middle',fill:'#6b7685'},'yield of a quote, bp per hour on the capital it uses');
+  $('a1').textContent=isFinite(B.x)?Math.round(B.x).toLocaleString('en-US'):'nothing pays';$('a2').textContent=(B.bp*3600*1e4).toFixed(0)+' bp/h';$('a3').textContent=(B.share*100).toFixed(1)+' %';$('a4').textContent=(B.util*100).toFixed(0)+' %';$('a5').textContent=(B.profit*3600).toFixed(0)+' units';
   const hit=el(svg,'rect',{x:ML,y:MT,width:pw,height:ph,fill:'transparent'});
-  hit.onpointermove=e=>{const bb=svg.getBoundingClientRect(),vx=(e.clientX-bb.left)*W_/bb.width;let j=Math.min(ns.length-1,Math.max(0,Math.floor((vx-ML)/pw*ns.length)));
-    tip($('t2'),svg,X(ns[j]),Y(prof[j]),`<b>n = ${ns[j]}</b><br>expected profit: <b>${prof[j].toFixed(2)}</b><br>P(A ≥ C): ${(pov[j]*100).toFixed(1)} %<br>E[(A − C)⁺]: ${eov[j].toFixed(3)}`)};
+  hit.onpointermove=e=>{const bb=svg.getBoundingClientRect(),a=xlo*Math.pow(xhi/xlo,((e.clientX-bb.left)*W_/bb.width-ML)/pw);tip($('t2'),svg,X(a),Y(yld(a)),`<b>size ${Math.round(a).toLocaleString('en-US')}</b><br>profit per quote: <b>${(B.a*a-B.b).toFixed(2)} units</b><br>yield: ${yld(a).toFixed(0)} bp/h<br>${a>=B.x?'quoted':'declined'}`)};
   hit.onpointerleave=()=>{$('t2').hidden=true};
+  draw3();
 }
-['c','p2','q2','mg','f'].forEach(id=>$(id).addEventListener('input',draw2));
+['cap','lam','m2','w2','sd','nu','sg','p','g','hl'].forEach(id=>$(id).addEventListener('input',draw2));
 
-/* ---------- chart 3: throughput vs window ---------- */
+/* ---------- chart 3: profit per hour vs capital ---------- */
+function atDefaultLo(){if(!window.SIM)return 0;return Math.min(0,...SIM.allocation.rows.map(r=>Math.min(r.sim_fcfs_profit_per_hour,r.sim_bid_profit_per_hour)))*1.1}
 function draw3(){
-  const svg=$('c3');clear(svg);if(!window.SIM){el(svg,'text',{x:450,y:130,'text-anchor':'middle'},'data.js not loaded: run python3 run.py');return}const rows=SIM.capacity;const ML=70,MR=20,MT=16,MB=44,W_=900,H=260,pw=W_-ML-MR,ph=H-MT-MB;
-  const hi=Math.max(...rows.map(r=>Math.max(r.fills_per_s,r.closed_form_fills_per_s)))*1.15;
-  const X=w=>ML+(Math.log(w)-Math.log(4))/(Math.log(400)-Math.log(4))*pw,Y=v=>MT+(1-v/hi)*ph;
-  ticks(0,hi,4).forEach(v=>{el(svg,'line',{x1:ML,x2:ML+pw,y1:Y(v),y2:Y(v),stroke:'#e6eaef'});el(svg,'text',{x:ML-8,y:Y(v)+4,'text-anchor':'end'},v.toFixed(3))});
-  rows.forEach(r=>{el(svg,'text',{x:X(r.window),y:MT+ph+18,'text-anchor':'middle'},r.window+' s')});
-  el(svg,'path',{d:rows.map((r,i)=>(i?'L':'M')+X(r.window)+' '+Y(r.closed_form_fills_per_s)).join(' '),fill:'none',stroke:'var(--blue)','stroke-width':2});
-  rows.forEach(r=>{el(svg,'circle',{cx:X(r.window),cy:Y(r.fills_per_s),r:4,fill:'#142033',stroke:'#fff','stroke-width':1.5});el(svg,'text',{x:X(r.window),y:Y(r.fills_per_s)-10,'text-anchor':'middle'},r.fills_per_s.toFixed(4)+' · util '+(r.utilisation*100).toFixed(0)+'%')});
-  el(svg,'text',{x:ML+pw/2,y:H-6,'text-anchor':'middle',fill:'#6b7685'},'award window W');el(svg,'text',{x:14,y:MT+ph/2,transform:`rotate(-90 14 ${MT+ph/2})`,'text-anchor':'middle',fill:'#6b7685'},'fills per second');
+  const P=curP(),S=cur2(),svg=$('c3');clear(svg);const ML=70,MR=20,MT=16,MB=44,W_=900,H=280,pw=W_-ML-MR,ph=H-MT-MB;
+  const clo=5000,chi=1e6,X=c=>ML+(Math.log(c)-Math.log(clo))/(Math.log(chi)-Math.log(clo))*pw;
+  const grid=[];for(let i=0;i<=60;i++)grid.push(clo*Math.pow(chi/clo,i/60));
+  const atDefault=window.SIM&&Math.abs(S.m*1e4-SIM.allocation.markup_bp)<1e-6&&S.W===SIM.allocation.window&&S.lam===SIM.allocation.arrival_rate&&Math.abs(S.sd-SIM.allocation.size_log_sd)<1e-9&&Math.abs(P.gas-12.5)<1e-9&&Math.abs(P.p-0.3)<1e-9&&P.nu===4&&Math.abs(P.sigma-2e-4)<1e-9&&P.kappa===0;
+  const bid=grid.map(c=>bidPrice(S.m,S.W,P,c,S.lam,S.sd)),hi=Math.max(...bid.map(b=>b.profit))*3600*1.1,lo=atDefault?atDefaultLo():0,Y=v=>MT+(1-(v-lo)/(hi-lo))*ph;
+  ticks(lo,hi,5).forEach(v=>{el(svg,'line',{x1:ML,x2:ML+pw,y1:Y(v),y2:Y(v),stroke:'#e6eaef'});el(svg,'text',{x:ML-8,y:Y(v)+4,'text-anchor':'end'},v.toLocaleString('en-US',{maximumFractionDigits:0}))});
+  if(lo<0)el(svg,'line',{x1:ML,x2:ML+pw,y1:Y(0),y2:Y(0),stroke:'#6b7685'});
+  [5000,10000,30000,100000,300000,1000000].forEach(v=>{el(svg,'line',{x1:X(v),x2:X(v),y1:MT+ph,y2:MT+ph+5,stroke:'#6b7685'});el(svg,'text',{x:X(v),y:MT+ph+19,'text-anchor':'middle'},v>=1e6?'1M':v>=1000?(v/1000)+'k':v)});
+  el(svg,'path',{d:grid.map((c,i)=>(i?'L':'M')+X(c).toFixed(1)+' '+Y(bid[i].profit*3600).toFixed(1)).join(' '),fill:'none',stroke:'var(--blue)','stroke-width':2.4});
+  if(atDefault)SIM.allocation.rows.forEach(r=>{el(svg,'circle',{cx:X(r.capital),cy:Y(r.sim_bid_profit_per_hour),r:4.5,fill:'var(--blue)',stroke:'#fff','stroke-width':1.5});el(svg,'circle',{cx:X(r.capital),cy:Y(r.sim_fcfs_profit_per_hour),r:4.5,fill:'var(--orange)',stroke:'#fff','stroke-width':1.5})});
+  else el(svg,'text',{x:ML+pw-6,y:MT+14,'text-anchor':'end',fill:'#6b7685'},'engine dots shown at the default sliders');
+  el(svg,'text',{x:ML+pw/2,y:H-6,'text-anchor':'middle',fill:'#6b7685'},'capital, source units (log scale)');el(svg,'text',{x:14,y:MT+ph/2,transform:`rotate(-90 14 ${MT+ph/2})`,'text-anchor':'middle',fill:'#6b7685'},'profit per hour, units');
+  const hit=el(svg,'rect',{x:ML,y:MT,width:pw,height:ph,fill:'transparent'});
+  hit.onpointermove=e=>{const bb=svg.getBoundingClientRect(),c=clo*Math.pow(chi/clo,((e.clientX-bb.left)*W_/bb.width-ML)/pw),b=bidPrice(S.m,S.W,P,c,S.lam,S.sd);tip($('t3'),svg,X(c),Y(b.profit*3600),`<b>capital ${Math.round(c).toLocaleString('en-US')}</b><br>threshold policy: <b>${(b.profit*3600).toFixed(0)}</b> per hour<br>quote sizes ≥ ${isFinite(b.x)?Math.round(b.x).toLocaleString('en-US'):'—'}`)};
+  hit.onpointerleave=()=>{$('t3').hidden=true};
 }
-draw1();$('mk').value=(fair(300,{nu:4,sigma:2e-4,p:0.3,gas:12.5,kappa:0})*1e4).toFixed(1);draw1p();draw2();draw3();
+draw1();$('mk').value=(fair(300,{nu:4,sigma:2e-4,p:0.3,gas:12.5,kappa:0})*1e4).toFixed(1);draw1p();draw2();
 </script>
 </body>
 </html>

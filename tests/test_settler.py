@@ -4,8 +4,9 @@ import numpy as np
 import pytest
 from scipy import integrate, stats
 
-from settler import Engine, Auction, Decline, Inventory, Market, Quote, breakeven, fair_markup, gas_floor, realized_sigma, tail_call, window_std
-from settler.simulate import pnl_at_fixed_markup, spec_market
+from settler import (Auction, Decline, Engine, Inventory, Market, Quote, Sizes, bid_price, breakeven, expected_pnl,
+                     fair_markup, gas_floor, held_seconds, profit_line, realized_sigma, tail_call, window_std)
+from settler.simulate import capacity_run, pnl_at_fixed_markup, spec_market
 
 MK = Market()
 
@@ -30,32 +31,54 @@ def test_fair_markup_limits():
     assert fair_markup(300, Market(nu=1e9)) == pytest.approx(fair_markup(300, Market(nu=math.inf)), rel=1e-6)
 
 
-def test_engine_feasibility_capping_and_hard_reservation():
-    eng = Engine(MK, window=300.0, inventory=Inventory(capacity=2))
+def test_mean_reversion_caps_the_price_of_time():
+    ou = Market(mean_reversion=math.log(2) / 60)                                  # one-minute half-life
+    assert window_std(5, ou) == pytest.approx(window_std(5, MK), rel=0.03)         # short windows: a random walk
+    assert window_std(3600, ou) == pytest.approx(window_std(600, ou), rel=1e-6)    # long windows: saturated at σ/√(2κ)
+    assert fair_markup(300, ou) < fair_markup(300, MK)
+
+
+def test_engine_feasibility_capping_and_capital_reservation():
+    eng = Engine(MK, window=300.0, inventory=Inventory(capital=2000.0, min_size=200.0))
     assert isinstance(eng.on_auction(Auction(0, 0.0, 20.0), 0.0, 1.0), Decline)   # 20 s left < 24 s latency
-    q = eng.on_auction(Auction(1, 0.0, 100.0), 0.0, 1.0)
+    assert eng.on_auction(Auction(1, 0.0, 4000.0, amount=150.0), 0.0, 1.0).reason.value == "too_small"
+    q = eng.on_auction(Auction(2, 0.0, 100.0), 0.0, 1.0)
     assert isinstance(q, Quote) and q.award_deadline == 76.0 and q.markup < eng.markup(300.0)
-    assert isinstance(eng.on_auction(Auction(2, 1.0, 4000.0), 1.0, 1.0), Quote)
-    assert eng.on_auction(Auction(3, 2.0, 4000.0), 2.0, 1.0).reason.value == "no_inventory"
+    assert isinstance(eng.on_auction(Auction(3, 1.0, 4000.0), 1.0, 1.0), Quote)
+    assert eng.on_auction(Auction(4, 2.0, 4000.0, amount=500.0), 2.0, 1.0).reason.value == "no_capital"
     eng.on_award(q.id, 50.0)
-    assert eng.inventory.committed == 1 and isinstance(eng.on_auction(Auction(4, 3.0, 4000.0), 3.0, 1.0), Decline)
+    assert eng.inventory.committed == 1000.0 and isinstance(eng.on_auction(Auction(5, 3.0, 4000.0), 3.0, 1.0), Decline)
     eng.on_release(q.id)
-    assert isinstance(eng.on_auction(Auction(5, 4.0, 4000.0), 4.0, 1.0), Quote)
+    assert isinstance(eng.on_auction(Auction(6, 4.0, 4000.0), 4.0, 1.0), Quote)
 
 
-@pytest.mark.parametrize("q,penalty", [(0.0, 25.0), (0.0, 8.0), (0.05, 8.0), (0.2, 8.0), (0.2, 3.0), (0.31, 10.0)])
-def test_newsvendor_cap_is_the_argmax_of_expected_profit(q, penalty):
-    C, p, margin = 10, 0.3, 1.0
+def test_profit_is_linear_in_size_with_gas_as_the_fixed_cost():
+    a, b = profit_line(0.015, 60.0, MK)
+    for size in (300.0, 1000.0, 4000.0):
+        assert a * size - b == pytest.approx(expected_pnl(0.015, 60.0, MK, size)[0], rel=1e-9)
+    assert b == pytest.approx(MK.gas_mean * (1 - MK.p_informed * (1 - expected_pnl(0.015, 60.0, MK)[1])), rel=1e-9)
 
-    def profit(n):  # m informed among n; all of them fill (prob q) or none; uninformed always fill
-        m = np.arange(n + 1)
-        over = lambda awards: np.maximum(awards - C, 0)
-        unfunded = np.sum(stats.binom.pmf(m, n, p) * (q * over(n) + (1 - q) * over(n - m)))
-        return n * (1 - p * (1 - q)) * margin - penalty * unfunded
 
-    assert Inventory(C, p, q, margin, penalty).max_live() == max(range(C, C + 20), key=profit)
-    assert Inventory(C, p, q, margin).max_live() == C   # infinite penalty: never a naked quote
-    assert Inventory(C, 1.0, q, margin, penalty).max_live() == C and Inventory(C, p, q, 9.0, 8.0).max_live() == C
+def test_bid_price_threshold_is_the_knapsack_optimum():
+    sizes, lam, m, W = Sizes(1000.0, 0.8), 2.0, 0.015, 60.0
+    a, b, T = *profit_line(m, W, MK), held_seconds(m, W, MK)
+    grid = np.exp(np.linspace(math.log(30), math.log(80_000), 6000))                        # discretised sizes
+    weight = lam * stats.lognorm.pdf(grid, sizes.log_sd, scale=sizes.median) * np.gradient(grid)
+    profit, usage = (a * grid - b) * weight, grid * T * weight
+    order = np.argsort(-(a * grid - b) / (grid * T))                                         # greedy by yield
+    for capital in (5_000.0, 50_000.0, 1e9):
+        fits = grid[order] <= capital                                                         # one payment we cannot fund
+        taken = (np.cumsum(usage[order] * fits) <= capital) & (profit[order] > 0) & fits
+        assert bid_price(m, W, MK, capital, lam, sizes).profit_per_s == pytest.approx(profit[order][taken].sum(), rel=0.02)
+    slack = bid_price(m, W, MK, 1e9, lam, sizes)
+    assert slack.bid_price == 0.0 and slack.min_size == pytest.approx(b / a)
+
+
+def test_capacity_run_follows_the_bid_price():
+    sizes = Sizes(1000.0, 0.8)
+    bp = bid_price(0.015, 60.0, MK, 20_000.0, 2.0, sizes)
+    sim = capacity_run(60.0, MK, 20_000.0, 0.015, seconds=10_000, sizes=sizes, min_size=bp.min_size)
+    assert 0.0 < sim["accept_share"] <= bp.accept_share + 1e-9 and 0.3 < sim["utilisation"] <= 1.0   # blocking only removes quotes
 
 
 def test_vectorised_quote_rule_is_the_engine():
@@ -69,13 +92,6 @@ def test_vectorised_quote_rule_is_the_engine():
         if isinstance(out, Quote):
             assert out.window == pytest.approx(min(window, latest - t0)) and out.price == pytest.approx(tape.rate[int(t0)] * (1 + m))
             assert awarded[i] == ((out.price < tape.rate[int(out.award_deadline)]) if tape.informed[i] else True)
-
-
-def test_mean_reversion_caps_the_price_of_time():
-    ou = Market(mean_reversion=math.log(2) / 60)                                  # one-minute half-life
-    assert window_std(5, ou) == pytest.approx(window_std(5, MK), rel=0.03)         # short windows: a random walk
-    assert window_std(3600, ou) == pytest.approx(window_std(600, ou), rel=1e-6)    # long windows: saturated at σ/√(2κ)
-    assert fair_markup(300, ou) < fair_markup(300, MK)
 
 
 def test_realized_sigma_recovers_a_constant():

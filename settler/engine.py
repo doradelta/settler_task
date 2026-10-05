@@ -2,30 +2,23 @@
 
 Lifecycle: on_auction -> Quote | Decline; on_award (reserved -> committed); on_expiry / on_release (freed).
 
-Problem 2 lives in Inventory. A live quote reserves one payment. With penalty = inf no quote is ever
-naked (live + committed <= capacity). With a finite penalty F for an award we cannot fund, the policy
-overbooks to the newsvendor level: the n-th live quote is allowed while
-    p_fill · margin >= F · ΔE_n,
-ΔE_n being the extra unfunded award it brings. Uninformed quotes always fill; informed ones watch the same
-rate path, so we take the conservative extreme and let them fill together with probability q or not at all:
-    ΔE_n = q · 1{n > free} + (1-p)(1-q) · P(Bin(n-1, 1-p) >= free),   p_fill = 1 - p(1-q).
+Inventory is capital in source units. A live quote reserves its full amount (never a naked quote) and an
+award locks it until release. Admission is a size threshold from the bid price (settler/allocation.py):
+a quote whose expected profit does not cover the shadow price of the capital it ties up is declined.
 """
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
-from functools import lru_cache
 from enum import Enum
 from typing import Callable, Optional, Union
-
-from scipy import stats
 
 from .pricing import Market, fair_markup
 
 
 class Reason(str, Enum):
-    INFEASIBLE = "infeasible"        # fulfillment_deadline leaves less than the settlement latency
-    NO_INVENTORY = "no_inventory"
+    INFEASIBLE = "infeasible"    # fulfillment_deadline leaves less than the settlement latency
+    TOO_SMALL = "too_small"      # below the bid-price threshold: would not pay for the capital it ties up
+    NO_CAPITAL = "no_capital"    # every unit of capital is reserved or locked
 
 
 @dataclass(frozen=True)
@@ -44,6 +37,7 @@ class Quote:
     rate: float            # R0 observed when quoting
     markup: float
     price: float           # R0 · (1 + markup), source per destination unit
+    amount: float          # source units promised
     award_deadline: float  # min(now + W, fulfillment_deadline - latency)
     window: float          # award_deadline - quoted_at
 
@@ -54,59 +48,28 @@ class Decline:
     reason: Reason
 
 
-@lru_cache(maxsize=None)
-def newsvendor_cap(free: int, p_informed: float, q: float, margin: float, penalty: float) -> int:
-    """Largest n whose marginal live quote still pays; ΔE_n is non-decreasing, so expected profit is concave in n."""
-    p_fill = 1.0 - p_informed * (1.0 - q)
-    if not math.isfinite(penalty) or margin <= 0.0 or p_fill == 0.0 or margin >= penalty:
-        return free  # no usable penalty: never a naked quote
-
-    def extra_unfunded(n: int) -> float:  # ΔE_n = E[(A_n - free)+] - E[(A_{n-1} - free)+]
-        return q * float(n > free) + (1 - p_informed) * (1 - q) * stats.binom.sf(free - 1, n - 1, 1 - p_informed)
-
-    n = free
-    while penalty * extra_unfunded(n + 1) <= p_fill * margin:
-        n += 1
-    return n
-
-
 @dataclass
 class Inventory:
-    capacity: Optional[int] = None   # payments we can fund; None = unlimited
-    p_informed: float = 0.3          # share of originators who only award when the rate beat the quote
-    q_informed: float = 0.0          # P(the rate beats the quote at the deadline): from problem 1
-    margin: float = 0.0              # expected profit per fill, source units
-    penalty: float = math.inf        # cost of an award we cannot fund; inf = never overbook
-    live: int = 0
-    committed: int = 0
-    overdrafts: int = 0
+    capital: Optional[float] = None  # source units we can front; None = unlimited
+    min_size: float = 0.0            # bid-price threshold; 0 = quote anything we can fund
+    reserved: float = 0.0
+    committed: float = 0.0
 
-    @property
-    def p_fill(self) -> float:
-        return 1.0 - self.p_informed * (1.0 - self.q_informed)
-
-    def max_live(self) -> float:
-        if self.capacity is None:
-            return math.inf
-        return newsvendor_cap(self.capacity - self.committed, self.p_informed, self.q_informed, self.margin, self.penalty)
-
-    def try_reserve(self) -> bool:
-        if self.capacity is not None and self.live >= self.max_live():
+    def try_reserve(self, amount: float) -> bool:
+        if self.capital is not None and self.reserved + self.committed + amount > self.capital + 1e-9:
             return False
-        self.live += 1
+        self.reserved += amount
         return True
 
-    def commit(self) -> None:
-        self.live -= 1
-        self.committed += 1
-        if self.capacity is not None and self.committed > self.capacity:
-            self.overdrafts += 1
+    def commit(self, amount: float) -> None:
+        self.reserved -= amount
+        self.committed += amount
 
-    def cancel(self) -> None:
-        self.live -= 1
+    def cancel(self, amount: float) -> None:
+        self.reserved -= amount
 
-    def release(self) -> None:
-        self.committed -= 1
+    def release(self, amount: float) -> None:
+        self.committed -= amount
 
 
 class Engine:
@@ -117,6 +80,7 @@ class Engine:
         self._markup_fn = markup_fn or (lambda w: fair_markup(w, market))
         self._cache: dict[float, float] = {}
         self.live: dict[int, Quote] = {}
+        self.committed: dict[int, Quote] = {}
         self._next_id = 0
 
     def markup(self, window: float) -> float:
@@ -129,11 +93,13 @@ class Engine:
         latest_safe_bid = a.fulfillment_deadline - self.market.latency
         if latest_safe_bid <= now:
             return Decline(a.id, Reason.INFEASIBLE)
+        if a.amount < self.inventory.min_size:
+            return Decline(a.id, Reason.TOO_SMALL)
         deadline = min(now + self.window, latest_safe_bid)
-        m = self.markup(deadline - now)             # price before reserving: a pricing error leaks no slot
-        if not self.inventory.try_reserve():
-            return Decline(a.id, Reason.NO_INVENTORY)
-        q = Quote(self._next_id, a.id, now, rate, m, rate * (1.0 + m), deadline, deadline - now)
+        m = self.markup(deadline - now)             # price before reserving: a pricing error leaks no capital
+        if not self.inventory.try_reserve(a.amount):
+            return Decline(a.id, Reason.NO_CAPITAL)
+        q = Quote(self._next_id, a.id, now, rate, m, rate * (1.0 + m), a.amount, deadline, deadline - now)
         self.live[q.id] = q
         self._next_id += 1
         return q
@@ -143,12 +109,14 @@ class Engine:
         if now > q.award_deadline + 1e-9:
             raise ValueError(f"award after deadline for quote {quote_id}")
         del self.live[quote_id]
-        self.inventory.commit()
+        self.inventory.commit(q.amount)
+        self.committed[quote_id] = q
         return q
 
     def on_expiry(self, quote_id: int) -> None:
-        del self.live[quote_id]
-        self.inventory.cancel()
+        q = self.live.pop(quote_id)
+        self.inventory.cancel(q.amount)
 
     def on_release(self, quote_id: int) -> None:
-        self.inventory.release()
+        q = self.committed.pop(quote_id)
+        self.inventory.release(q.amount)
