@@ -79,15 +79,6 @@ code{font-size:.9em;background:#eef1f5;padding:1px 5px;border-radius:4px}
 <div class="read"><span>strike <b id="k1"></b></span><span>you keep per uninformed fill at today's rate <b id="k2"></b></span><span>expected P&amp;L per quote under the model, 5-min window <b id="k3"></b></span><span>fair markup <b id="k4"></b></span></div>
 </div>
 
-<h2>The option you wrote</h2>
-<p>The distribution of the rate move over one window, against the strike it is measured on: our own price. An originator who waits exercises only in the shaded tail; its mass is q and its mean depth is the markout we eat on those fills. Same sliders as above, plus the window.</p>
-<div class="card">
-<div class="ctrl"><label>window W, seconds <b id="wV"></b><input id="w" type="range" min="5" max="300" step="5" value="300"></label></div>
-<svg id="c1b" viewBox="0 0 900 230"></svg>
-<div class="leg"><span><i style="background:var(--blue)"></i>Student-t</span><span><i style="background:var(--orange)"></i>Gaussian, same variance</span><span><i style="background:#9fb6d8;height:9px;width:14px"></i>informed originator exercises (Student-t)</span></div>
-<div class="read"><span>q, Student-t <b id="d1"></b></span><span>q, Gaussian <b id="d2"></b></span><span>markout of an informed fill C/q: Student-t <b id="d3"></b></span><span>Gaussian <b id="d4"></b></span></div>
-</div>
-
 <h2>2 · Finite inventory, many live quotes</h2>
 <p>Each live quote reserves one payment. With capacity C and n live quotes, the awards A are the uninformed (they always fill) plus the informed, who watch the same rate path and fill together with probability q or not at all. The n-th quote adds ΔE<sub>n</sub> = q·1{n &gt; C} + (1−p)(1−q)·P(Bin(n−1, 1−p) ≥ C) expected unfunded awards, non-decreasing in n, so expected profit n·p_fill·margin − F·E[(A − C)⁺] is concave and the optimum is a critical fractile: keep quoting while p_fill·margin ≥ F·ΔE<sub>n</sub>. F = ∞ is hard reservation (n = C).</p>
 <div class="card">
@@ -204,28 +195,6 @@ function draw1p(){
 ['mk','g','p','sg','nu','hl'].forEach(id=>$(id).addEventListener('input',draw1p));
 $('g').addEventListener('input',()=>{$('mk').value=(fair(300,curP())*1e4).toFixed(1);draw1p()});
 
-/* ---------- drawing: the option you wrote ---------- */
-function draw1b(){
-  const nuRaw=+$('nu').value,hl=+$('hl').value,P={nu:nuRaw>30?Infinity:nuRaw,sigma:+$('sg').value*1e-4,p:+$('p').value,gas:+$('g').value,kappa:hl>0?Math.LN2/hl:0},W=+$('w').value;$('wV').textContent=W+' s';
-  const s=wstd(W,P),m=fair(W,P),c=isFinite(P.nu)?s*Math.sqrt((P.nu-2)/P.nu):s;
-  const ft=r=>isFinite(P.nu)?tpdf(r/c,P.nu)/c:npdf(r/s)/s,fg=r=>npdf(r/s)/s;
-  const xmin=-4*s,xmax=Math.min(Math.max(4*s,m*1.15),8*s),off=m>xmax;
-  const svg=$('c1b');clear(svg);const ML=40,MR=20,MT=14,MB=40,W_=900,H=230,pw=W_-ML-MR,ph=H-MT-MB;
-  const X=r=>ML+(r-xmin)/(xmax-xmin)*pw,ymax=Math.max(ft(0),fg(0))*1.08,Y=v=>MT+(1-v/ymax)*ph;
-  const pts=[];for(let i=0;i<=400;i++){const r=xmin+(xmax-xmin)*i/400;pts.push([r,ft(r),fg(r)])}
-  if(!off){const area=['M'+X(m)+' '+Y(0)];area.push('L'+X(m)+' '+Y(ft(m)));pts.filter(o=>o[0]>m).forEach(o=>area.push('L'+X(o[0]).toFixed(1)+' '+Y(o[1]).toFixed(1)));area.push('L'+X(xmax)+' '+Y(0)+'Z');el(svg,'path',{d:area.join(' '),fill:'#9fb6d8',opacity:0.8})}
-  el(svg,'line',{x1:ML,x2:ML+pw,y1:Y(0),y2:Y(0),stroke:'#6b7685'});
-  el(svg,'path',{d:pts.map((o,i)=>(i?'L':'M')+X(o[0]).toFixed(1)+' '+Y(o[2]).toFixed(1)).join(' '),fill:'none',stroke:'var(--orange)','stroke-width':2});
-  el(svg,'path',{d:pts.map((o,i)=>(i?'L':'M')+X(o[0]).toFixed(1)+' '+Y(o[1]).toFixed(1)).join(' '),fill:'none',stroke:'var(--blue)','stroke-width':2.2});
-  ticks(xmin*1e4,xmax*1e4,8).forEach(v=>{el(svg,'line',{x1:X(v/1e4),x2:X(v/1e4),y1:MT+ph,y2:MT+ph+5,stroke:'#6b7685'});el(svg,'text',{x:X(v/1e4),y:MT+ph+19,'text-anchor':'middle'},v.toFixed(0))});
-  const xm=off?xmax:m;el(svg,'line',{x1:X(xm),x2:X(xm),y1:MT,y2:MT+ph,stroke:'#142033','stroke-dasharray':'4 4'});
-  el(svg,'text',{x:X(xm)-6,y:MT+14,'text-anchor':'end',fill:'#142033'},'our price: +'+(m*1e4).toFixed(1)+' bp = '+(m/s).toFixed(1)+' σ'+(off?' (off axis →)':''));
-  el(svg,'text',{x:ML+pw/2,y:H-4,'text-anchor':'middle',fill:'#6b7685'},'rate move over the window, bp   (one normal move = '+(s*1e4).toFixed(1)+' bp)');
-  const[Ct,qt]=tailCall(m,s,P.nu),[Cg,qg]=tailCall(m,s,Infinity);
-  const fq=v=>v<1e-3?v.toExponential(1):v.toFixed(3);$('d1').textContent=fq(qt);$('d2').textContent=fq(qg);$('d3').textContent=(qt>0?Ct/qt*1e4:0).toFixed(1)+' bp';$('d4').textContent=(qg>0?Cg/qg*1e4:0).toFixed(1)+' bp';
-}
-['nu','sg','p','g','hl','w'].forEach(id=>$(id).addEventListener('input',draw1b));
-
 /* ---------- chart 2: newsvendor overbooking ---------- */
 function draw2(){
   const C=+$('c').value,p=+$('p2').value,q=+$('q2').value,margin=+$('mg').value/1e4*N,F=+$('f').value/100*N,pf=1-p*(1-q);
@@ -265,7 +234,7 @@ function draw3(){
   rows.forEach(r=>{el(svg,'circle',{cx:X(r.window),cy:Y(r.fills_per_s),r:4,fill:'#142033',stroke:'#fff','stroke-width':1.5});el(svg,'text',{x:X(r.window),y:Y(r.fills_per_s)-10,'text-anchor':'middle'},r.fills_per_s.toFixed(4)+' · util '+(r.utilisation*100).toFixed(0)+'%')});
   el(svg,'text',{x:ML+pw/2,y:H-6,'text-anchor':'middle',fill:'#6b7685'},'award window W');el(svg,'text',{x:14,y:MT+ph/2,transform:`rotate(-90 14 ${MT+ph/2})`,'text-anchor':'middle',fill:'#6b7685'},'fills per second');
 }
-draw1();$('mk').value=(fair(300,{nu:4,sigma:2e-4,p:0.3,gas:12.5,kappa:0})*1e4).toFixed(1);draw1p();draw1b();draw2();draw3();
+draw1();$('mk').value=(fair(300,{nu:4,sigma:2e-4,p:0.3,gas:12.5,kappa:0})*1e4).toFixed(1);draw1p();draw2();draw3();
 </script>
 </body>
 </html>
