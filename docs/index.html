@@ -70,13 +70,12 @@ code{font-size:.9em;background:#eef1f5;padding:1px 5px;border-radius:4px}
 <div class="read"><span>at W = 300 s: m* <b id="r1"></b></span><span>premium over floor <b id="r2"></b></span><span>P(informed awards) <b id="r3"></b></span><span>knee (strike 2σ away) <b id="r4"></b></span></div>
 </div>
 
-<h2>What one quote pays: the payoff diagram</h2>
-<p>The textbook view. x-axis: where the rate is at the deadline, relative to today. y-axis: your profit on one 1,000-unit payment. The informed originator's line is a <b>short call</b>: flat at zero while the rate is below your price (he walks), then falling once it is above (he takes it, you buy dearer and pay gas). A covered-call writer has the same shape but starts at +premium; you start at zero, because the quote is firm and free. The uninformed line is where you actually get paid: a straight line, in profit at today's rate by markup − gas.</p>
+<h2>The call you wrote</h2>
+<p>The standard option chart. Underlying: the rate at expiry (today = 1.000). Strike: your price. One line: your P&amp;L as the writer of the call. Left of the strike the originator walks and you make nothing; right of it he exercises and you pay the difference on the destination units you promised. A textbook writer starts at +premium; you start at zero, because the quote is firm and free. The premium is collected through the markup instead: that is the whole pricing problem.</p>
 <div class="card">
-<div class="ctrl"><label>markup m, bp <b id="mkV"></b><input id="mk" type="range" min="1" max="300" step="0.1" value="126.9"></label></div>
+<div class="ctrl"><label>strike = your price, markup in bp <b id="mkV"></b><input id="mk" type="range" min="1" max="300" step="0.1" value="126.9"></label></div>
 <div class="wrap"><svg id="c1p" viewBox="0 0 900 300"></svg><div id="t1p" class="tip" hidden></div></div>
-<div class="leg"><span><i style="background:var(--orange)"></i>informed originator: short call, premium 0</span><span><i style="background:#2f7d4f"></i>uninformed originator: linear</span><span><i style="background:var(--blue)"></i>expected: 0.7 × uninformed + 0.3 × informed</span></div>
-<div class="read"><span>strike = your price <b id="k1"></b></span><span>profit at today's rate, uninformed <b id="k2"></b></span><span>loss if the rate ends 1 normal move above your price <b id="k3"></b></span></div>
+<div class="read"><span>strike <b id="k1"></b></span><span>premium received <b>0</b></span><span>what the call is worth at 5 min (Bachelier, per informed quote) <b id="k2"></b></span><span>in markup terms <b id="k3"></b></span></div>
 </div>
 
 <h2>The option you wrote</h2>
@@ -174,34 +173,30 @@ function draw1(){
 
 
 
-/* ---------- payoff diagram ---------- */
+/* ---------- payoff diagram: a plain short call ---------- */
 function draw1p(){
-  const m=+$('mk').value/1e4,gas=+$('g').value,p=+$('p').value,hl=+$('hl').value,P={sigma:+$('sg').value*1e-4,kappa:hl>0?Math.LN2/hl:0},s=wstd(300,P);
+  const m=+$('mk').value/1e4,nuRaw=+$('nu').value,hl=+$('hl').value,P={nu:nuRaw>30?Infinity:nuRaw,sigma:+$('sg').value*1e-4,p:+$('p').value,gas:+$('g').value,kappa:hl>0?Math.LN2/hl:0};
   $('mkV').textContent=(m*1e4).toFixed(1)+' bp';
-  const K=1+m,xr=Math.max(2*m,4*s,0.002);
-  const un=r=>N*(1-(1+r)/K)-gas,inf=r=>r>m?un(r):0,ex=r=>(1-p)*un(r)+p*inf(r);
-  const svg=$('c1p');clear(svg);const ML=60,MR=20,MT=14,MB=40,W_=900,H=300,pw=W_-ML-MR,ph=H-MT-MB;
-  const ys=[un(-xr),un(xr),inf(xr),-gas];let lo=Math.min(...ys),hi=Math.max(...ys);const pad=(hi-lo)*0.1;lo-=pad;hi+=pad;
-  const X=r=>ML+(r+xr)/(2*xr)*pw,Y=v=>MT+(1-(v-lo)/(hi-lo))*ph;
+  const K=1+m,D=N/K,s=wstd(300,P),xr=Math.max(2*m,4*s,0.002),lo_r=1-xr,hi_r=1+xr;
+  const pnl=R=>-Math.max(R-K,0)*D;
+  const svg=$('c1p');clear(svg);const ML=64,MR=20,MT=14,MB=40,W_=900,H=300,pw=W_-ML-MR,ph=H-MT-MB;
+  const lo=pnl(hi_r)*1.15,hi=-lo*0.35;
+  const X=R=>ML+(R-lo_r)/(hi_r-lo_r)*pw,Y=v=>MT+(1-(v-lo)/(hi-lo))*ph;
   ticks(lo,hi,5).forEach(v=>{el(svg,'line',{x1:ML,x2:ML+pw,y1:Y(v),y2:Y(v),stroke:'#e6eaef'});el(svg,'text',{x:ML-8,y:Y(v)+4,'text-anchor':'end'},v.toFixed(0))});
-  ticks(-xr*1e4,xr*1e4,8).forEach(v=>{el(svg,'line',{x1:X(v/1e4),x2:X(v/1e4),y1:MT+ph,y2:MT+ph+5,stroke:'#6b7685'});el(svg,'text',{x:X(v/1e4),y:MT+ph+19,'text-anchor':'middle'},(v>0?'+':'')+v.toFixed(0))});
+  ticks(lo_r,hi_r,8).forEach(v=>{el(svg,'line',{x1:X(v),x2:X(v),y1:MT+ph,y2:MT+ph+5,stroke:'#6b7685'});el(svg,'text',{x:X(v),y:MT+ph+19,'text-anchor':'middle'},v.toFixed(3))});
   el(svg,'line',{x1:ML,x2:ML+pw,y1:Y(0),y2:Y(0),stroke:'#6b7685'});
-  el(svg,'rect',{x:X(m),y:MT,width:ML+pw-X(m),height:ph,fill:'#fbe5d9',opacity:0.5});
-  el(svg,'text',{x:X(m)+6,y:MT+ph-8,fill:'#6b7685'},'informed takes it: you lose');
-  el(svg,'line',{x1:X(0),x2:X(0),y1:MT,y2:MT+ph,stroke:'#9aa3ad','stroke-dasharray':'3 3'});el(svg,'text',{x:X(0)-5,y:MT+ph-8,'text-anchor':'end',fill:'#6b7685'},"today's rate");
-  el(svg,'line',{x1:X(m),x2:X(m),y1:MT,y2:MT+ph,stroke:'#142033','stroke-dasharray':'4 4'});el(svg,'text',{x:X(m)-6,y:MT+14,'text-anchor':'end',fill:'#142033'},'your price (strike): +'+(m*1e4).toFixed(1)+' bp');
-  const seg=(f,a,b)=>'M'+X(a).toFixed(1)+' '+Y(f(a)).toFixed(1)+' L'+X(b).toFixed(1)+' '+Y(f(b)).toFixed(1);
-  el(svg,'path',{d:seg(un,-xr,xr),fill:'none',stroke:'#2f7d4f','stroke-width':2});
-  el(svg,'path',{d:seg(ex,-xr,m)+' '+seg(ex,m+1e-9,xr),fill:'none',stroke:'var(--blue)','stroke-width':2.2});
-  el(svg,'path',{d:seg(inf,-xr,m)+' M'+X(m)+' '+Y(0)+' L'+X(m)+' '+Y(un(m))+' '+seg(inf,m+1e-9,xr),fill:'none',stroke:'var(--orange)','stroke-width':2.4});
-  el(svg,'text',{x:ML+pw/2,y:H-4,'text-anchor':'middle',fill:'#6b7685'},'rate at the deadline vs today, bp');el(svg,'text',{x:14,y:MT+ph/2,transform:`rotate(-90 14 ${MT+ph/2})`,'text-anchor':'middle',fill:'#6b7685'},'profit on one payment, units');
-  $('k1').textContent='+'+(m*1e4).toFixed(1)+' bp';$('k2').textContent=un(0).toFixed(2)+' units';$('k3').textContent=un(m+s).toFixed(1)+' units';
+  el(svg,'line',{x1:X(1),x2:X(1),y1:MT,y2:MT+ph,stroke:'#9aa3ad','stroke-dasharray':'3 3'});el(svg,'text',{x:X(1)-5,y:MT+ph-8,'text-anchor':'end',fill:'#6b7685'},'today 1.000');
+  el(svg,'line',{x1:X(K),x2:X(K),y1:MT,y2:MT+ph,stroke:'#142033','stroke-dasharray':'4 4'});el(svg,'text',{x:X(K)+6,y:MT+14,fill:'#142033'},'strike '+K.toFixed(4));
+  el(svg,'text',{x:X(lo_r)+8,y:Y(0)-8,fill:'#6b7685'},'originator walks: 0');el(svg,'text',{x:X(hi_r)-6,y:Y(pnl(hi_r))-10,'text-anchor':'end',fill:'#6b7685'},'originator exercises: you pay (rate − strike) × units');
+  el(svg,'path',{d:'M'+X(lo_r)+' '+Y(0)+' L'+X(K)+' '+Y(0)+' L'+X(hi_r).toFixed(1)+' '+Y(pnl(hi_r)).toFixed(1),fill:'none',stroke:'var(--orange)','stroke-width':2.6,'stroke-linejoin':'round'});
+  el(svg,'text',{x:ML+pw/2,y:H-4,'text-anchor':'middle',fill:'#6b7685'},'rate at expiry (destination units priced in source units)');el(svg,'text',{x:14,y:MT+ph/2,transform:`rotate(-90 14 ${MT+ph/2})`,'text-anchor':'middle',fill:'#6b7685'},'your P&L per payment, units');
+  const[C]=tailCall(m,s,P.nu),prem=N/K*C;
+  $('k1').textContent=K.toFixed(4)+' (+'+(m*1e4).toFixed(1)+' bp)';$('k2').textContent=prem.toFixed(3)+' units';$('k3').textContent=(prem/N*1e4).toFixed(2)+' bp';
   const hit=el(svg,'rect',{x:ML,y:MT,width:pw,height:ph,fill:'transparent'});
-  hit.onpointermove=e=>{const bb=svg.getBoundingClientRect(),r=((e.clientX-bb.left)*W_/bb.width-ML)/pw*2*xr-xr;
-    tip($('t1p'),svg,X(r),Y(ex(r)),`<b>rate ${(r>=0?'+':'')+(r*1e4).toFixed(0)} bp</b><br>uninformed: <b>${un(r).toFixed(2)}</b><br>informed: <b>${inf(r).toFixed(2)}</b><br>expected: ${ex(r).toFixed(2)}`)};
+  hit.onpointermove=e=>{const bb=svg.getBoundingClientRect(),R=lo_r+((e.clientX-bb.left)*W_/bb.width-ML)/pw*(hi_r-lo_r);tip($('t1p'),svg,X(R),Y(pnl(R)),`<b>rate ${R.toFixed(4)}</b><br>P&L: <b>${pnl(R).toFixed(2)} units</b>`)};
   hit.onpointerleave=()=>{$('t1p').hidden=true};
 }
-['mk','g','p','sg','hl'].forEach(id=>$(id).addEventListener('input',draw1p));
+['mk','g','p','sg','nu','hl'].forEach(id=>$(id).addEventListener('input',draw1p));
 $('g').addEventListener('input',()=>{const hl=+$('hl').value,nuRaw=+$('nu').value;$('mk').value=(fair(300,{nu:nuRaw>30?Infinity:nuRaw,sigma:+$('sg').value*1e-4,p:+$('p').value,gas:+$('g').value,kappa:hl>0?Math.LN2/hl:0})*1e4).toFixed(1);draw1p()});
 
 /* ---------- drawing: the option you wrote ---------- */
