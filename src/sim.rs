@@ -27,7 +27,7 @@ pub fn spec_market(mk: &Market, seconds: f64, seed: u64, mirror: bool) -> Tape {
     let sign = if mirror { -1.0 } else { 1.0 };
     let mut log_r = 0.0;
     let mut rate = vec![1.0];
-    for _ in 0..seconds as usize + 3700 {
+    for _ in 0..seconds as usize + 3700 { // the last fulfilment deadline is up to 1 h after the last auction
         let z: f64 = path.sample(StandardNormal);
         log_r += sign * mk.sigma * z;
         rate.push(f64::exp(log_r));
@@ -79,7 +79,7 @@ fn zero_crossing(ms: [f64; 3], y: [f64; 3]) -> f64 {
     let a = ((y[2] - y[0]) / (w2 - w0) - d1) / w2;
     let (b, c) = (d1 - a * w0, y[1]);
     let disc = b * b - 4.0 * a * c;
-    let w = if a.abs() < 1e-300 || disc < 0.0 { -c / b } else { -2.0 * c / (b + b.signum() * disc.sqrt()) };
+    let w = if a == 0.0 || disc < 0.0 { -c / b } else { -2.0 * c / (b + b.signum() * disc.sqrt()) };
     1.0 / (z[1] + w) - 1.0
 }
 
@@ -118,7 +118,7 @@ mod tests {
 
     #[test]
     fn the_engine_breaks_even_where_the_gaussian_model_says() {
-        let p = breakeven(60.0, &Market::default(), 40_000.0, 7);
+        let p = breakeven(60.0, &Market::default().with_gas(0.1), 40_000.0, 7); // cheap gas: the option leg is exercised
         assert!((p.sim_bp - p.gaussian_bp).abs() < 3.0 * p.ci_bp + 1e-3);
     }
 

@@ -10,12 +10,12 @@ const WINDOWS: [f64; 11] = [5.0, 10.0, 20.0, 30.0, 45.0, 60.0, 90.0, 120.0, 180.
 fn main() -> std::io::Result<()> {
     let spec = Market::default();
     let scenarios = [("spec", "Spec gas: 0.5 % to 2 % of the payment", spec), ("gas_div10", "Gas ÷ 10", spec.with_gas(0.1))];
-    let mut csv = String::from("scenario,window_s,gaussian_bp,student_bp,engine_bp,ci_bp\n");
+    let mut csv = String::from("scenario,window_s,gaussian_bp,student_bp,sim_bp,ci_bp\n");
     let mut js = vec![];
     let mut panels = vec![];
     for (key, name, mk) in scenarios {
         println!("\n{name}  (gas floor {:.3} bp)", mk.gas_floor() * 1e4);
-        println!("{:>7} {:>10} {:>10} {:>20}", "W (s)", "Gaussian", "Student-t", "engine, spec market");
+        println!("{:>7} {:>10} {:>10} {:>20}", "W (s)", "Gaussian", "Student-t", "engine (sim)");
         let points: Vec<_> = WINDOWS.iter().map(|&w| sim::breakeven(w, &mk, SECONDS, SEED)).collect();
         for p in &points {
             println!("{:>7} {:>10.3} {:>10.3} {:>12.3} ± {:.3}", p.window, p.gaussian_bp, p.student_bp, p.sim_bp, p.ci_bp);
@@ -28,7 +28,7 @@ fn main() -> std::io::Result<()> {
     std::fs::create_dir_all("results")?;
     std::fs::write("results/curve.csv", csv)?;
     std::fs::create_dir_all("chart")?;
-    std::fs::write("chart/markup_vs_window.svg", chart::svg(&panels))?;
+    std::fs::write("chart/markup_vs_window.svg", chart::svg(&panels, &format!("seed {SEED}, {SECONDS} s per point")))?;
     std::fs::write("docs/data.js", format!("window.SIM = {{\"curve\":{{{}}}}};\n", js.join(",")))?;
     println!("\nwrote results/curve.csv, chart/markup_vs_window.svg and docs/data.js");
     Ok(())

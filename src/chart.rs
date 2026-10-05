@@ -21,11 +21,11 @@ fn ticks(lo: f64, hi: f64) -> Vec<f64> {
     out
 }
 
-pub fn svg(panels: &[(&str, f64, Vec<Point>)]) -> String {
+pub fn svg(panels: &[(&str, f64, Vec<Point>)], subtitle: &str) -> String {
     let mut s = String::from(r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 470" font-family="Helvetica, Arial, sans-serif" font-size="12" fill="#3c4859">
 <rect width="1100" height="470" fill="white"/>
-<text x="550" y="26" text-anchor="middle" font-size="15" fill="#142033">Fair markup vs award window, 5 s to 5 min (seed 20261002, 120,000 s per point)</text>
 "##);
+    s += &format!("<text x=\"550\" y=\"26\" text-anchor=\"middle\" font-size=\"15\" fill=\"{INK}\">Fair markup vs award window, 5 s to 5 min ({subtitle})</text>\n");
     for (i, (title, floor, pts)) in panels.iter().enumerate() {
         let (x0, y0, pw, ph) = (80.0 + 545.0 * i as f64, 60.0, 440.0, 320.0);
         let values = pts.iter().flat_map(|p| [p.gaussian_bp, p.student_bp, p.sim_bp + p.ci_bp, p.sim_bp - p.ci_bp]);

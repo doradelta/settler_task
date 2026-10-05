@@ -79,7 +79,7 @@ code{font-size:.9em;background:#eef1f5;padding:1px 5px;border-radius:4px}
 <div class="read"><span>strike <b id="k1"></b></span><span>you keep per uninformed fill at today's rate <b id="k2"></b></span><span>expected P&amp;L per quote under the model, 5-min window <b id="k3"></b></span><span>fair markup <b id="k4"></b></span></div>
 </div>
 
-<p class="sub">Seed 20261002. <code>python3 run.py</code> regenerates every number on this page.</p>
+<p class="sub">Seed 20261002. <code>cargo run --release</code> regenerates the simulated dots (docs/data.js); the lines are computed live.</p>
 </main>
 <script src="data.js"></script>
 <script>
@@ -95,13 +95,12 @@ function tailCall(k,s,nu){ // E[(r-k)+], P(r>k) for sd s, Student-t(nu) shape (n
   if(s<=0)return[Math.max(-k,0),k<0?1:0];
   if(!isFinite(nu)){const a=k/s;return[s*(npdf(a)-a*nsf(a)),nsf(a)]}
   const c=s*Math.sqrt((nu-2)/nu),a=k/c;return[c*((nu+a*a)/(nu-1)*tpdf(a,nu)-a*tsf(a,nu)),tsf(a,nu)]}
-function binomPmf(n,p){p=Math.min(Math.max(p,1e-12),1-1e-12);const out=[];for(let k=0;k<=n;k++)out.push(Math.exp(lgamma(n+1)-lgamma(k+1)-lgamma(n-k+1)+k*Math.log(p)+(n-k)*Math.log(1-p)));return out}
 
 /* ---------- pricing ---------- */
 const N=1000,L=24,LOCK=144,R=0.10,YEAR=31557600;
 function wstd(W,P){return P.kappa>0?P.sigma*Math.sqrt((1-Math.exp(-2*P.kappa*W))/(2*P.kappa)):P.sigma*Math.sqrt(W)}
-function pnl(m,W,P,A){const Nn=A||N,K=1+m,drift=1+(P.kappa>0?0:P.sigma*P.sigma*(W/4+L/2));const un=Nn*(1-drift/K)-P.gas;const[C,q]=tailCall(m,wstd(W,P),P.nu);const inf=-(Nn/K*C+P.gas*q);
-  const held=(1-P.p)*(W/2+L+LOCK)+P.p*(W+q*(L+LOCK));return[(1-P.p)*un+P.p*inf-R*Nn*held/YEAR,q,held]}
+function pnl(m,W,P){const Nn=N,K=1+m,drift=1+(P.kappa>0?0:P.sigma*P.sigma*(W/4+L/2));const un=Nn*(1-drift/K)-P.gas;const[C,q]=tailCall(m,wstd(W,P),P.nu);const inf=-(Nn/K*C+P.gas*q);
+  const held=(1-P.p)*(W/2+L+LOCK)+P.p*(W+q*(L+LOCK));return[(1-P.p)*un+P.p*inf-R*Nn*held/YEAR,q]}
 function fair(W,P){let lo=0,hi=0.5;for(let i=0;i<60;i++){const mid=(lo+hi)/2;if(pnl(mid,W,P)[0]>0)hi=mid;else lo=mid}return(lo+hi)/2}
 
 /* ---------- svg helpers ---------- */

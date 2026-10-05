@@ -60,17 +60,17 @@ pub fn tail_call(k: f64, s: f64, nu: f64) -> (f64, f64) {
     (c * ((nu + a * a) / (nu - 1.0) * t.pdf(a) - a * t.sf(a)), t.sf(a))
 }
 
-/// Expected profit per quote at markup m for a window W, and q = P(an informed originator awards).
-pub fn expected_pnl(m: f64, window: f64, mk: &Market) -> (f64, f64) {
+/// Expected profit per quote at markup m for a window W.
+pub fn expected_pnl(m: f64, window: f64, mk: &Market) -> f64 {
     let (n, p, k) = (mk.notional, mk.p_informed, 1.0 + m);
     let drift = 1.0 + mk.sigma.powi(2) * (window / 4.0 + mk.latency / 2.0); // the spec's rate drifts up slightly
     let uninformed = n * (1.0 - drift / k) - mk.gas_mean; // awards at a random time, whatever the price
-    let (call, q) = tail_call(m, mk.sigma * window.sqrt(), mk.nu);
+    let (call, q) = tail_call(m, mk.sigma * window.sqrt(), mk.nu); // q = P(an informed originator awards)
     let informed = -(n / k * call + mk.gas_mean * q); // awards only when the rate beat us: a short call
     let settle = mk.latency + mk.lock;
     let held = (1.0 - p) * (window / 2.0 + settle) + p * (window + q * settle); // capital reserved, then locked
     let carry = mk.cost_of_capital * n * held / SECONDS_PER_YEAR;
-    ((1.0 - p) * uninformed + p * informed - carry, q)
+    (1.0 - p) * uninformed + p * informed - carry
 }
 
 /// Break-even markup m*(W). Profit rises with m (more revenue, a dearer strike), so there is one root.
@@ -78,7 +78,7 @@ pub fn fair_markup(window: f64, mk: &Market) -> f64 {
     let (mut lo, mut hi) = (0.0, 0.5);
     for _ in 0..100 {
         let mid = 0.5 * (lo + hi);
-        if expected_pnl(mid, window, mk).0 > 0.0 { hi = mid } else { lo = mid }
+        if expected_pnl(mid, window, mk) > 0.0 { hi = mid } else { lo = mid }
     }
     0.5 * (lo + hi)
 }

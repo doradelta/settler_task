@@ -1,4 +1,4 @@
-scenario,window_s,gaussian_bp,student_bp,engine_bp,ci_bp
+scenario,window_s,gaussian_bp,student_bp,sim_bp,ci_bp
 spec,5,126.593256,126.593341,126.593205,0.000172
 spec,10,126.593913,126.594253,126.593845,0.000198
 spec,20,126.595227,126.596576,126.595121,0.000249

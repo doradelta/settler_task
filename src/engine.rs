@@ -1,7 +1,7 @@
 //! Part A: auction events in, quote-or-decline out. In memory, single process.
 //!
 //! Concurrency: a live quote reserves its payment of capital and an award keeps it locked until release,
-//! so the engine only quotes what it can fund. With 50 live quotes and capital for 10, the 11th is declined.
+//! so the engine only quotes what it can fund. With capital for 10 payments and 50 auctions, 11 to 50 are declined.
 
 use std::collections::HashMap;
 
@@ -16,7 +16,7 @@ pub struct Auction {
 
 #[derive(Clone, Debug)]
 pub struct Quote {
-    pub id: usize,
+    pub id: usize,           // the auction it answers
     pub quoted_at: f64,
     pub rate: f64,           // R0: the rate when we quoted
     pub markup: f64,
@@ -40,26 +40,19 @@ pub struct Engine {
     in_use: f64,               // reserved by live quotes plus locked by awards
     live: HashMap<usize, Quote>,
     awarded: HashMap<usize, Quote>,
-    markups: HashMap<i64, f64>, // fair markup per whole second of window
-    next_id: usize,
 }
 
 impl Engine {
     pub fn new(market: Market, window: f64, capital: f64) -> Self {
-        Engine { market, window, capital, fixed_markup: None, in_use: 0.0, live: HashMap::new(),
-                 awarded: HashMap::new(), markups: HashMap::new(), next_id: 0 }
+        Engine { market, window, capital, fixed_markup: None, in_use: 0.0, live: HashMap::new(), awarded: HashMap::new() }
     }
 
     pub fn with_fixed_markup(self, markup: f64) -> Self {
         Engine { fixed_markup: Some(markup), ..self }
     }
 
-    fn markup(&mut self, window: f64) -> f64 {
-        if let Some(m) = self.fixed_markup {
-            return m;
-        }
-        let key = window.round() as i64;
-        *self.markups.entry(key).or_insert_with(|| fair_markup(key as f64, &self.market))
+    fn markup(&self, window: f64) -> f64 {
+        self.fixed_markup.unwrap_or_else(|| fair_markup(window, &self.market))
     }
 
     pub fn on_auction(&mut self, a: &Auction, now: f64, rate: f64) -> Result<Quote, Decline> {
@@ -73,9 +66,8 @@ impl Engine {
         let award_deadline = (now + self.window).min(latest_safe_bid);
         let markup = self.markup(award_deadline - now);
         self.in_use += a.amount;
-        let q = Quote { id: self.next_id, quoted_at: now, rate, markup, price: rate * (1.0 + markup),
+        let q = Quote { id: a.id, quoted_at: now, rate, markup, price: rate * (1.0 + markup),
                         amount: a.amount, award_deadline, window: award_deadline - now };
-        self.next_id += 1;
         self.live.insert(q.id, q.clone());
         Ok(q)
     }
@@ -131,7 +123,7 @@ mod tests {
     }
 
     #[test]
-    fn fifty_live_quotes_and_capital_for_ten() {
+    fn fifty_auctions_and_capital_for_ten() {
         let mut engine = Engine::new(Market::default(), 60.0, 10_000.0);
         let results: Vec<_> = (0..50).map(|i| engine.on_auction(&auction(i, 0.0, 4000.0), 0.0, 1.0)).collect();
         assert_eq!(results.iter().filter(|r| r.is_ok()).count(), 10);
