@@ -15,6 +15,8 @@ A quote at price Q = R₀(1+m), held for W seconds, hands the originator a call 
 
 - **Break-even:** (1−p)·E[profit | uninformed] + p·E[profit | informed] − carry = 0, where carry is the cost of capital while the payment is reserved, then locked. m is both the revenue and the strike, so this is a fixed point; it is monotone in m, so one bisection solves it (`settler/pricing.py`).
 
+For a pinned corridor (stablecoin to stablecoin) the rate mean-reverts instead of wandering; that only replaces σ²W by σ²(1 − e^(−2κW))/2κ (`Market.mean_reversion`, an OU process) and caps the price of time at the reversion horizon. The spec's market is a random walk, κ = 0, and so is everything below.
+
 We quote ν = 4 as a placeholder for a tape we have not seen (finite variance, infinite kurtosis, where minute-scale crypto returns tend to sit); against the spec's Gaussian it over-charges 0.24 bp at 300 s and nothing at 5 s. What a desk adds on top: σ from an EWMA of the tape (`realized_sigma`, written, not needed by the spec run); p, q and ν from **markouts** of quotes (walk-aways plus awards at the deadline give p, their ratio gives q, the depth of the deadline markouts picks ν); the tail stays in closed form, no Monte Carlo at quote time.
 
 **The curve.** Lines: the model. Dots: the engine's quote rule run against the specified Gaussian market, 120,000 s per point, seed 20261002 (vectorised, identical to the event loop; antithetic paths; gas at its known mean):
@@ -54,7 +56,7 @@ Even at break-even the window has an inventory price: keeping profit per slot-se
 ## Run
 
     pip install -r requirements.txt      # Python 3.9+, numpy, scipy, matplotlib, pytest
-    python3 -m pytest -q                 # 15 tests, under a second
+    python3 -m pytest -q                 # 16 tests, under a second
     python3 run.py                       # results/, docs/data.js, chart/  (about 7 s)
 
 ## Notes

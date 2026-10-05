@@ -55,13 +55,14 @@ code{font-size:.9em;background:#eef1f5;padding:1px 5px;border-radius:4px}
 </div>
 
 <h2>Markup versus award window</h2>
-<p>Break-even markup m*(W): gas floor + the expected loss to originators who exercise against us + carry. Returns are Student-t with ν degrees of freedom (variance σ²W); drag ν to the right for the Gaussian limit the spec simulates.</p>
+<p>Break-even markup m*(W): gas floor + the expected loss to originators who exercise against us + carry. Returns are Student-t with ν degrees of freedom (variance σ²W); drag ν to the right for the Gaussian limit the spec simulates. The spec's rate is a random walk; for a pinned corridor set a mean-reversion half-life and the move over the window saturates, so the price of time stops growing.</p>
 <div class="card">
 <div class="ctrl">
   <label>ν (nu): tail heaviness <b id="nuV"></b><input id="nu" type="range" min="2.5" max="30.5" step="0.5" value="4"></label>
   <label>σ, bp per √s <b id="sgV"></b><input id="sg" type="range" min="0.5" max="10" step="0.5" value="2"></label>
   <label>p informed <b id="pV"></b><input id="p" type="range" min="0" max="0.9" step="0.05" value="0.3"></label>
   <label>mean gas, units per fill <b id="gV"></b><input id="g" type="range" min="0" max="20" step="0.25" value="12.5"></label>
+  <label>mean reversion half-life, s (OU) <b id="hlV"></b><input id="hl" type="range" min="0" max="600" step="10" value="0"></label>
   <label><input id="ext" type="checkbox"> extend the axis to 1 hour</label>
 </div>
 <div class="wrap"><svg id="c1" viewBox="0 0 900 360"></svg><div id="t1" class="tip" hidden></div></div>
@@ -116,7 +117,8 @@ function binomPmf(n,p){p=Math.min(Math.max(p,1e-12),1-1e-12);const out=[];for(le
 
 /* ---------- pricing ---------- */
 const N=1000,L=24,LOCK=144,R=0.10,YEAR=31557600;
-function pnl(m,W,P){const K=1+m,drift=1+P.sigma*P.sigma*(W/4+L/2);const un=N*(1-drift/K)-P.gas;const[C,q]=tailCall(m,P.sigma*Math.sqrt(W),P.nu);const inf=-(N/K*C+P.gas*q);
+function wstd(W,P){return P.kappa>0?P.sigma*Math.sqrt((1-Math.exp(-2*P.kappa*W))/(2*P.kappa)):P.sigma*Math.sqrt(W)}
+function pnl(m,W,P){const K=1+m,drift=1+(P.kappa>0?0:P.sigma*P.sigma*(W/4+L/2));const un=N*(1-drift/K)-P.gas;const[C,q]=tailCall(m,wstd(W,P),P.nu);const inf=-(N/K*C+P.gas*q);
   const held=(1-P.p)*(W/2+L+LOCK)+P.p*(W+q*(L+LOCK));return[(1-P.p)*un+P.p*inf-R*N*held/YEAR,q]}
 function fair(W,P){let lo=0,hi=0.5;for(let i=0;i<60;i++){const mid=(lo+hi)/2;if(pnl(mid,W,P)[0]>0)hi=mid;else lo=mid}return(lo+hi)/2}
 
@@ -133,11 +135,12 @@ const $=id=>document.getElementById(id);
 let Wgrid=[];
 function draw1(){
   const XMAX=$('ext').checked?3600:300;Wgrid=[];for(let x=Math.log(5);x<=Math.log(XMAX)+1e-9;x+=(Math.log(XMAX)-Math.log(5))/70)Wgrid.push(Math.exp(x));
-  const nuRaw=+$('nu').value,P={nu:nuRaw>30?Infinity:nuRaw,sigma:+$('sg').value*1e-4,p:+$('p').value,gas:+$('g').value};
+  const nuRaw=+$('nu').value,hl=+$('hl').value,P={nu:nuRaw>30?Infinity:nuRaw,sigma:+$('sg').value*1e-4,p:+$('p').value,gas:+$('g').value,kappa:hl>0?Math.LN2/hl:0};
+  $('hlV').textContent=hl>0?hl+' s (moves cap at '+(P.sigma/Math.sqrt(2*P.kappa)*1e4).toFixed(1)+' bp)':'none: random walk (the spec)';
   $('nuV').textContent=isFinite(P.nu)?P.nu:'∞ (Gaussian)';$('sgV').textContent=$('sg').value;$('pV').textContent=$('p').value;$('gV').textContent=P.gas.toFixed(2)+' ('+(P.gas/10).toFixed(3)+'%)';
   const floor=P.gas/(N-P.gas)*1e4;
   const t=Wgrid.map(W=>fair(W,P)*1e4),g=Wgrid.map(W=>fair(W,{...P,nu:Infinity})*1e4);
-  const scen=(Math.abs(P.sigma-2e-4)<1e-9&&Math.abs(P.p-0.3)<1e-9)?(Math.abs(P.gas-12.5)<1e-9?'spec':Math.abs(P.gas-1.25)<1e-9?'gas_div10':null):null;
+  const scen=(Math.abs(P.sigma-2e-4)<1e-9&&Math.abs(P.p-0.3)<1e-9&&P.kappa===0)?(Math.abs(P.gas-12.5)<1e-9?'spec':Math.abs(P.gas-1.25)<1e-9?'gas_div10':null):null;
   const sim=scen&&window.SIM?SIM.curve[scen].rows:[];
   const svg=$('c1');clear(svg);const ML=70,MR=20,MT=16,MB=44,W_=900,H=360,pw=W_-ML-MR,ph=H-MT-MB;
   const ys=[...t,...g,floor,...sim.map(r=>r.sim_bp+r.ci_bp),...sim.map(r=>r.sim_bp-r.ci_bp)];let lo=Math.min(...ys),hi=Math.max(...ys);const pad=(hi-lo)*0.08||0.01;lo-=pad;hi+=pad;
@@ -151,20 +154,20 @@ function draw1(){
   el(svg,'path',{d:path(g),fill:'none',stroke:'var(--orange)','stroke-width':2});el(svg,'path',{d:path(t),fill:'none',stroke:'var(--blue)','stroke-width':2.2});
   sim.forEach(r=>{el(svg,'line',{x1:X(r.window),x2:X(r.window),y1:Y(r.sim_bp-r.ci_bp),y2:Y(r.sim_bp+r.ci_bp),stroke:'#142033'});el(svg,'circle',{cx:X(r.window),cy:Y(r.sim_bp),r:3.5,fill:'#142033',stroke:'#fff','stroke-width':1.5})});
   const m300=fair(300,P),[,q300]=pnl(m300,300,P);$('r1').textContent=(m300*1e4).toFixed(3)+' bp';$('r2').textContent=(m300*1e4-floor).toFixed(3)+' bp';$('r3').textContent=q300<1e-3?q300.toExponential(1):q300.toFixed(3);
-  const knee=Math.pow(Math.log(1+P.gas/(N-P.gas))/(2*P.sigma),2);$('r4').textContent=knee<1?'< 1 s':knee<60?knee.toFixed(0)+' s':knee<3600?(knee/60).toFixed(1)+' min':(knee/3600).toFixed(1)+' h';
+  const knee=Math.pow(Math.log(1+P.gas/(N-P.gas))/(2*P.sigma),2),capped=P.kappa>0&&P.sigma/Math.sqrt(2*P.kappa)<Math.log(1+P.gas/(N-P.gas))/2;$('r4').textContent=capped?'never: reversion caps the move':knee<1?'< 1 s':knee<60?knee.toFixed(0)+' s':knee<3600?(knee/60).toFixed(1)+' min':(knee/3600).toFixed(1)+' h';
   const cross=el(svg,'line',{y1:MT,y2:MT+ph,stroke:'#142033',opacity:0}),hit=el(svg,'rect',{x:ML,y:MT,width:pw,height:ph,fill:'transparent'});
   hit.onpointermove=e=>{const bb=svg.getBoundingClientRect(),vx=(e.clientX-bb.left)*W_/bb.width;let i=0,bd=1e9;Wgrid.forEach((w,j)=>{const d=Math.abs(X(w)-vx);if(d<bd){bd=d;i=j}});
     cross.setAttribute('x1',X(Wgrid[i]));cross.setAttribute('x2',X(Wgrid[i]));cross.setAttribute('opacity',.4);const w=Wgrid[i];
     const rr=sim.find(r=>Math.abs(Math.log(r.window)-Math.log(w))<0.08);tip($('t1'),svg,X(w),Y(t[i]),`<b>W = ${w<60?w.toFixed(1)+' s':(w/60).toFixed(1)+' min'}</b><br>Student-t: <b>${t[i].toFixed(3)} bp</b><br>Gaussian: ${g[i].toFixed(3)} bp<br>floor: ${floor.toFixed(3)} bp`+(rr?`<br>quote rule, spec market: ${rr.sim_bp.toFixed(3)} ± ${rr.ci_bp.toFixed(3)} bp`:''))};
   hit.onpointerleave=()=>{$('t1').hidden=true;cross.setAttribute('opacity',0)};
 }
-['nu','sg','p','g','ext'].forEach(id=>$(id).addEventListener('input',draw1));
+['nu','sg','p','g','hl','ext'].forEach(id=>$(id).addEventListener('input',draw1));
 
 
 /* ---------- drawing: the option you wrote ---------- */
 function draw1b(){
-  const nuRaw=+$('nu').value,P={nu:nuRaw>30?Infinity:nuRaw,sigma:+$('sg').value*1e-4,p:+$('p').value,gas:+$('g').value},W=+$('w').value;$('wV').textContent=W+' s';
-  const s=P.sigma*Math.sqrt(W),m=fair(W,P),c=isFinite(P.nu)?s*Math.sqrt((P.nu-2)/P.nu):s;
+  const nuRaw=+$('nu').value,hl=+$('hl').value,P={nu:nuRaw>30?Infinity:nuRaw,sigma:+$('sg').value*1e-4,p:+$('p').value,gas:+$('g').value,kappa:hl>0?Math.LN2/hl:0},W=+$('w').value;$('wV').textContent=W+' s';
+  const s=wstd(W,P),m=fair(W,P),c=isFinite(P.nu)?s*Math.sqrt((P.nu-2)/P.nu):s;
   const ft=r=>isFinite(P.nu)?tpdf(r/c,P.nu)/c:npdf(r/s)/s,fg=r=>npdf(r/s)/s;
   const xmin=-4*s,xmax=Math.min(Math.max(4*s,m*1.15),8*s),off=m>xmax;
   const svg=$('c1b');clear(svg);const ML=40,MR=20,MT=14,MB=40,W_=900,H=230,pw=W_-ML-MR,ph=H-MT-MB;
@@ -177,11 +180,11 @@ function draw1b(){
   ticks(xmin*1e4,xmax*1e4,8).forEach(v=>{el(svg,'line',{x1:X(v/1e4),x2:X(v/1e4),y1:MT+ph,y2:MT+ph+5,stroke:'#6b7685'});el(svg,'text',{x:X(v/1e4),y:MT+ph+19,'text-anchor':'middle'},v.toFixed(0))});
   const xm=off?xmax:m;el(svg,'line',{x1:X(xm),x2:X(xm),y1:MT,y2:MT+ph,stroke:'#142033','stroke-dasharray':'4 4'});
   el(svg,'text',{x:X(xm)-6,y:MT+14,'text-anchor':'end',fill:'#142033'},'our price: +'+(m*1e4).toFixed(1)+' bp = '+(m/s).toFixed(1)+' σ'+(off?' (off axis →)':''));
-  el(svg,'text',{x:ML+pw/2,y:H-4,'text-anchor':'middle',fill:'#6b7685'},'rate move over the window, bp   (σ√W = '+(s*1e4).toFixed(1)+' bp)');
+  el(svg,'text',{x:ML+pw/2,y:H-4,'text-anchor':'middle',fill:'#6b7685'},'rate move over the window, bp   (one normal move = '+(s*1e4).toFixed(1)+' bp)');
   const[Ct,qt]=tailCall(m,s,P.nu),[Cg,qg]=tailCall(m,s,Infinity);
   const fq=v=>v<1e-3?v.toExponential(1):v.toFixed(3);$('d1').textContent=fq(qt);$('d2').textContent=fq(qg);$('d3').textContent=(qt>0?Ct/qt*1e4:0).toFixed(1)+' bp';$('d4').textContent=(qg>0?Cg/qg*1e4:0).toFixed(1)+' bp';
 }
-['nu','sg','p','g','w'].forEach(id=>$(id).addEventListener('input',draw1b));
+['nu','sg','p','g','hl','w'].forEach(id=>$(id).addEventListener('input',draw1b));
 
 /* ---------- chart 2: newsvendor overbooking ---------- */
 function draw2(){

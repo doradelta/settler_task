@@ -26,6 +26,7 @@ class Market:
     latency: float = 24.0           # L: award -> fulfilment proof (2 Ethereum blocks)
     lock: float = 144.0             # fulfil -> release (12 blocks x 12 s)
     cost_of_capital: float = 0.10   # per year, on the payment a quote ties up
+    mean_reversion: float = 0.0     # κ per second, pull of the rate back to its mean (OU); 0 = the spec's random walk
 
     def with_gas(self, factor: float) -> "Market":
         return replace(self, gas_mean=self.gas_mean * factor)
@@ -43,12 +44,18 @@ def tail_call(k: float, s: float, nu: float) -> tuple[float, float]:
     return c * ((nu + a * a) / (nu - 1.0) * stats.t.pdf(a, nu) - a * stats.t.sf(a, nu)), stats.t.sf(a, nu)
 
 
+def window_std(window: float, mk: Market) -> float:
+    """Size of a normal rate move over the window: σ√W for a random walk; with mean reversion it saturates at σ/√(2κ)."""
+    k = mk.mean_reversion
+    return mk.sigma * math.sqrt(window if k <= 0.0 else (1.0 - math.exp(-2.0 * k * window)) / (2.0 * k))
+
+
 def expected_pnl(m: float, window: float, mk: Market) -> tuple[float, float]:
     """Expected profit per quote at markup m, and q = P(informed originator awards)."""
     N, p, K = mk.notional, mk.p_informed, 1.0 + m
-    drift = 1.0 + mk.sigma**2 * (window / 4 + mk.latency / 2)  # the spec's log steps carry no -σ²/2
+    drift = 1.0 + (mk.sigma**2 * (window / 4 + mk.latency / 2) if mk.mean_reversion <= 0.0 else 0.0)  # spec log steps have no -σ²/2
     uninformed = N * (1.0 - drift / K) - mk.gas_mean           # awards at a random time, any price
-    call, q = tail_call(m, mk.sigma * math.sqrt(window), mk.nu)
+    call, q = tail_call(m, window_std(window, mk), mk.nu)
     informed = -(N / K * call + mk.gas_mean * q)                # awards iff the rate beat us: a short call
     held = (1 - p) * (window / 2 + mk.latency + mk.lock) + p * (window + q * (mk.latency + mk.lock))
     carry = mk.cost_of_capital * N * held / SECONDS_PER_YEAR

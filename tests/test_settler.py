@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 from scipy import integrate, stats
 
-from settler import Engine, Auction, Decline, Inventory, Market, Quote, breakeven, fair_markup, gas_floor, realized_sigma, tail_call
+from settler import Engine, Auction, Decline, Inventory, Market, Quote, breakeven, fair_markup, gas_floor, realized_sigma, tail_call, window_std
 from settler.simulate import pnl_at_fixed_markup, spec_market
 
 MK = Market()
@@ -69,6 +69,13 @@ def test_vectorised_quote_rule_is_the_engine():
         if isinstance(out, Quote):
             assert out.window == pytest.approx(min(window, latest - t0)) and out.price == pytest.approx(tape.rate[int(t0)] * (1 + m))
             assert awarded[i] == ((out.price < tape.rate[int(out.award_deadline)]) if tape.informed[i] else True)
+
+
+def test_mean_reversion_caps_the_price_of_time():
+    ou = Market(mean_reversion=math.log(2) / 60)                                  # one-minute half-life
+    assert window_std(5, ou) == pytest.approx(window_std(5, MK), rel=0.03)         # short windows: a random walk
+    assert window_std(3600, ou) == pytest.approx(window_std(600, ou), rel=1e-6)    # long windows: saturated at σ/√(2κ)
+    assert fair_markup(300, ou) < fair_markup(300, MK)
 
 
 def test_realized_sigma_recovers_a_constant():
