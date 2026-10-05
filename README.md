@@ -41,26 +41,26 @@ Gas is a fixed cost per fill, so a quote of size a earns **π(a) = α·a − β*
 
   maximise Σ x(a)·π(a)  subject to  Σ x(a)·a·T ≤ C,  0 ≤ x(a) ≤ λ·f(a).
 
-Its solution is greedy by yield π(a)/(a·T), which rises with size, so the optimal policy is a **threshold: quote iff a ≥ a_min**, where a_min is the gas break-even size while capital is slack and otherwise the size at which demand just fills the capital. The LP's dual **λ\* is the bid price**: what every unit of capital must earn per second (Talluri–van Ryzin bid-price control; `bid_price`, 30 lines, closed form via the lognormal partial mean). Is it convex? Yes, it is an LP, and the threshold is its closed-form solution; the fluid relaxation is an upper bound that becomes exact once capital is large next to a payment. The dynamic version (react to the capital free right now) is an MDP whose value is concave in capital, which is why one bid price is near-optimal.
+Its solution is greedy by yield π(a)/(a·T), which rises with size, so the optimal policy is a **threshold: quote iff a ≥ a_min**, where a_min is the gas break-even size while capital is slack and otherwise the size at which demand just fills the capital. The LP's dual **λ\* is the bid price**: what every unit of capital must earn per second (Talluri–van Ryzin bid-price control; `bid_price`, closed form via the lognormal partial mean). Is it convex? Yes, it is an LP, and the threshold is its closed-form solution; the fluid relaxation is an upper bound that becomes exact once capital is large next to a payment. The dynamic version (react to the capital free right now) is an MDP whose value is concave in capital, which is why one bid price is near-optimal.
 
 Engine runs of 20,000 s, payments drawn from the same distribution, profit per hour in source units:
 
 | capital | quote sizes ≥ | bid price (bp/h) | threshold, fluid | threshold, engine | quote everything you can fund |
 |---|---|---|---|---|---|
-| 10,000 | 7,554 | 2,112 | 2,142 | 942 | −2,417 |
+| 10,000 | 7,554 | 2,111 | 2,142 | 942 | −2,417 |
 | 50,000 | 4,935 | 1,970 | 10,440 | 7,302 | −3,874 |
 | 200,000 | 2,040 | 1,392 | 35,810 | 31,834 | 7,664 |
 | 500,000 | 846 | 0 | 49,793 | 50,099 | 39,871 |
 
-Two things to read off it. Quoting everything you can fund *loses money* while capital is scarce: the payments that still fit when capital is nearly full are the small ones, and those do not cover gas; selecting by size turns that into a profit at every capital level. And the fluid line overstates the engine at small capital (packing: a 7,500 quote on 10,000 of capital blocks everything else), converging above ~200,000.
+Two things to read off it. Quoting everything you can fund *loses money* while capital is scarce: the payments that still fit when capital is nearly full are the small ones, and those do not cover gas; selecting by size turns that into a profit at every capital level. And the fluid line overstates the engine at small capital (packing: a 7,500 quote on 10,000 of capital blocks everything else), converging above ~200,000 (engine rows carry about ±600/h of rate-path noise at 500,000, which is why that one sits a hair above the bound).
 
-The window enters through T: a longer window keeps capital reserved longer, which raises the bid price and the threshold. For a 5 bp desk margin that is worth about 13 bp at a 5-minute window against 5 bp at 5 seconds, two orders of magnitude above the option in §1.
+The window enters through T, the seconds each payment of capital stays tied up: 121 s at a 5 s window, 313 s at 5 minutes. At fixed capital a longer window raises the threshold (7,132 → 8,494 at C = 10,000) and the capital charge per quote, λ\*·T, while λ\* itself falls. That charge, 47–93 bp of the payment across the table, is what the window really costs; the option in §1 is at most 0.25 bp.
 
 ## Run
 
     pip install -r requirements.txt      # Python 3.9+, numpy, scipy, matplotlib, pytest
     python3 -m pytest -q                 # 13 tests, under a second
-    python3 run.py                       # results/, docs/data.js, chart/  (about 40 s)
+    python3 run.py                       # results/, docs/data.js, chart/  (a few seconds)
 
 ## Notes
 

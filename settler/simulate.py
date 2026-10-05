@@ -104,7 +104,7 @@ def capacity_run(window: float, mk: Market, capital: float, markup: float, secon
         in_use_time += (inv.reserved + inv.committed) * (t - last)
         last = t
 
-    for i, t0 in enumerate(tape.t0):
+    for i, t0 in enumerate(list(tape.t0) + [seconds]):
         while heap and heap[0][0] <= t0:
             t, kind, qid = heapq.heappop(heap)
             tick(t)
@@ -120,11 +120,12 @@ def capacity_run(window: float, mk: Market, capital: float, markup: float, secon
                 profit -= mk.cost_of_capital * q.amount * q.window / SECONDS_PER_YEAR
                 eng.on_expiry(qid)
         tick(t0)
+        if i == len(tape.t0):
+            break                                   # sentinel: events up to `seconds` are drained, no auction here
         out = eng.on_auction(Auction(i, t0, tape.deadline[i], float(tape.amount[i])), t0, tape.rate[int(t0)])
         if isinstance(out, Quote):
             quoted += 1
             when = out.award_deadline if tape.informed[i] else t0 + tape.u[i] * out.window
             heapq.heappush(heap, (when, 1 if tape.informed[i] else 2, out.id))
-    tick(seconds)
     return {"capital": capital, "min_size": min_size, "profit_per_s": profit / seconds,
             "utilisation": in_use_time / (capital * seconds), "accept_share": quoted / len(tape.t0)}

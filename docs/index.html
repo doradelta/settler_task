@@ -33,7 +33,7 @@ code{font-size:.9em;background:#eef1f5;padding:1px 5px;border-radius:4px}
 <body>
 <main>
 <h1>Settler Quote Engine</h1>
-<p>Two problems. <b>1.</b> A firm quote is a free option: price the time it stays open. <b>2.</b> Finite inventory under many live quotes: how many to keep out. Everything below is computed live; the dots are the engine's quote rule run against the specified market.</p>
+<p>Two problems. <b>1.</b> A firm quote is a free option: price the time it stays open. <b>2.</b> Finite capital and payments of different sizes: which auctions to quote. Everything below is computed live; the dots are the engine's quote rule run against the specified market.</p>
 
 <h2>1 · What a firm quote gives away</h2>
 <div class="card">
@@ -214,7 +214,7 @@ function draw2(){
   $('capV').textContent=Math.round(S.C).toLocaleString('en-US');$('lamV').textContent=S.lam.toFixed(1);$('m2V').textContent=$('m2').value+' bp';$('w2V').textContent=S.W+' s';$('sdV').textContent=S.sd.toFixed(2);
   const svg=$('c2');clear(svg);const ML=70,MR=20,MT=16,MB=44,W_=900,H=330,pw=W_-ML-MR,ph=H-MT-MB;
   const xlo=MED/20,xhi=MED*50,X=a=>ML+(Math.log(a)-Math.log(xlo))/(Math.log(xhi)-Math.log(xlo))*pw;
-  const yld=a=>(B.a*a-B.b)/(a*B.T)*3600*1e4,top=Math.max(B.a/B.T*3600*1e4,1e-6);
+  const yld=a=>(B.a*a-B.b)/(a*B.T)*3600*1e4,top=Math.max(B.a/B.T*3600*1e4,100);
   let hi=top*1.1,lo=-0.6*top;const Y=v=>MT+(1-(Math.max(v,lo)-lo)/(hi-lo))*ph;
   // size distribution as a background shape (density of ln a)
   const pts=[];for(let i=0;i<=200;i++){const la=Math.log(xlo)+(Math.log(xhi)-Math.log(xlo))*i/200;pts.push([Math.exp(la),Math.exp(-0.5*Math.pow((la-Math.log(MED))/S.sd,2))])}
@@ -226,8 +226,9 @@ function draw2(){
   const line=[];for(let i=0;i<=200;i++){const a=xlo*Math.pow(xhi/xlo,i/200);line.push((i?'L':'M')+X(a).toFixed(1)+' '+Y(yld(a)).toFixed(1))}
   el(svg,'path',{d:line.join(' '),fill:'none',stroke:'var(--blue)','stroke-width':2.4});
   if(B.binds){el(svg,'line',{x1:ML,x2:ML+pw,y1:Y(B.bp*3600*1e4),y2:Y(B.bp*3600*1e4),stroke:'var(--orange)','stroke-dasharray':'5 4','stroke-width':1.5});el(svg,'text',{x:ML+8,y:Y(B.bp*3600*1e4)-6,fill:'var(--orange)'},'bid price λ* = '+(B.bp*3600*1e4).toFixed(0)+' bp/h')}
-  if(isFinite(B.x)){const xx=Math.min(Math.max(B.x,xlo),xhi);el(svg,'line',{x1:X(xx),x2:X(xx),y1:MT,y2:MT+ph,stroke:'#142033','stroke-dasharray':'4 4'});el(svg,'text',{x:X(xx)+6,y:MT+14,fill:'#142033'},'quote from '+Math.round(B.x).toLocaleString('en-US')+(B.binds?' (capital binds)':' (gas break-even)'))}
+  if(isFinite(B.x)){const xx=Math.min(Math.max(B.x,xlo),xhi);el(svg,'line',{x1:X(xx),x2:X(xx),y1:MT,y2:MT+ph,stroke:'#142033','stroke-dasharray':'4 4'});el(svg,'text',{x:X(xx)>ML+pw-230?X(xx)-6:X(xx)+6,y:MT+14,'text-anchor':X(xx)>ML+pw-230?'end':'start',fill:'#142033'},'quote from '+Math.round(B.x).toLocaleString('en-US')+(B.binds?' (capital binds)':' (gas break-even)'))}
   el(svg,'text',{x:ML+pw/2,y:H-6,'text-anchor':'middle',fill:'#6b7685'},'payment size, source units (log scale)');el(svg,'text',{x:14,y:MT+ph/2,transform:`rotate(-90 14 ${MT+ph/2})`,'text-anchor':'middle',fill:'#6b7685'},'yield of a quote, bp per hour on the capital it uses');
+  if(!isFinite(B.x))el(svg,'text',{x:ML+pw/2,y:MT+30,'text-anchor':'middle',fill:'var(--orange)'},'at this markup no payment size covers gas and the option: nothing is quoted');
   $('a1').textContent=isFinite(B.x)?Math.round(B.x).toLocaleString('en-US'):'nothing pays';$('a2').textContent=(B.bp*3600*1e4).toFixed(0)+' bp/h';$('a3').textContent=(B.share*100).toFixed(1)+' %';$('a4').textContent=(B.util*100).toFixed(0)+' %';$('a5').textContent=(B.profit*3600).toFixed(0)+' units';
   const hit=el(svg,'rect',{x:ML,y:MT,width:pw,height:ph,fill:'transparent'});
   hit.onpointermove=e=>{const bb=svg.getBoundingClientRect(),a=xlo*Math.pow(xhi/xlo,((e.clientX-bb.left)*W_/bb.width-ML)/pw);tip($('t2'),svg,X(a),Y(yld(a)),`<b>size ${Math.round(a).toLocaleString('en-US')}</b><br>profit per quote: <b>${(B.a*a-B.b).toFixed(2)} units</b><br>yield: ${yld(a).toFixed(0)} bp/h<br>${a>=B.x?'quoted':'declined'}`)};
@@ -243,7 +244,7 @@ function draw3(){
   const clo=5000,chi=1e6,X=c=>ML+(Math.log(c)-Math.log(clo))/(Math.log(chi)-Math.log(clo))*pw;
   const grid=[];for(let i=0;i<=60;i++)grid.push(clo*Math.pow(chi/clo,i/60));
   const atDefault=window.SIM&&Math.abs(S.m*1e4-SIM.allocation.markup_bp)<1e-6&&S.W===SIM.allocation.window&&S.lam===SIM.allocation.arrival_rate&&Math.abs(S.sd-SIM.allocation.size_log_sd)<1e-9&&Math.abs(P.gas-12.5)<1e-9&&Math.abs(P.p-0.3)<1e-9&&P.nu===4&&Math.abs(P.sigma-2e-4)<1e-9&&P.kappa===0;
-  const bid=grid.map(c=>bidPrice(S.m,S.W,P,c,S.lam,S.sd)),hi=Math.max(...bid.map(b=>b.profit))*3600*1.1,lo=atDefault?atDefaultLo():0,Y=v=>MT+(1-(v-lo)/(hi-lo))*ph;
+  const bid=grid.map(c=>bidPrice(S.m,S.W,P,c,S.lam,S.sd)),hi=Math.max(1,...bid.map(b=>b.profit*3600))*1.1,lo=atDefault?atDefaultLo():0,Y=v=>MT+(1-(v-lo)/(hi-lo))*ph;
   ticks(lo,hi,5).forEach(v=>{el(svg,'line',{x1:ML,x2:ML+pw,y1:Y(v),y2:Y(v),stroke:'#e6eaef'});el(svg,'text',{x:ML-8,y:Y(v)+4,'text-anchor':'end'},v.toLocaleString('en-US',{maximumFractionDigits:0}))});
   if(lo<0)el(svg,'line',{x1:ML,x2:ML+pw,y1:Y(0),y2:Y(0),stroke:'#6b7685'});
   [5000,10000,30000,100000,300000,1000000].forEach(v=>{el(svg,'line',{x1:X(v),x2:X(v),y1:MT+ph,y2:MT+ph+5,stroke:'#6b7685'});el(svg,'text',{x:X(v),y:MT+ph+19,'text-anchor':'middle'},v>=1e6?'1M':v>=1000?(v/1000)+'k':v)});
