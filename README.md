@@ -1,10 +1,8 @@
 # Settler Quote Engine
 
-A firm quote that cannot be withdrawn is an option written for free. This repo prices it, and decides which auctions to quote when capital is finite and payments differ in size. The brief is in [Takehome_Settler_Quote_Engine.md](Takehome_Settler_Quote_Engine.md); every chart below is interactive at **[doradelta.github.io/settler_task](https://doradelta.github.io/settler_task/)** (`docs/index.html`, no build step).
+A firm quote that cannot be withdrawn is an option written for free. This repo prices it. The brief is in [Takehome_Settler_Quote_Engine.md](Takehome_Settler_Quote_Engine.md); every chart below is interactive at **[doradelta.github.io/settler_task](https://doradelta.github.io/settler_task/)** (`docs/index.html`, no build step).
 
-We read the brief as two different problems and keep each to its simplest correct form.
-
-## 1 · Pricing the time in a firm quote
+## Pricing the time in a firm quote
 
 A quote at price Q = R₀(1+m), held for W seconds, hands the originator a call on the rate: strike K = 1+m, expiry W, premium zero. On a fill we earn N·(1 − X/K) − gas, with X = R_exec / R₀.
 
@@ -33,33 +31,14 @@ Why it is flat: gas puts our price 126.6 bp above the market while the rate move
 
 **Stability.** The ± is a 60-batch t-interval; below 2 min it is a true 95 % CI and the Gaussian model sits inside it at every point. At spec gas an informed exercise needs a 3.6σ move inside a 300 s window, so the run saw none for W ≤ 240 s and 55 at W = 300 s, all on one path in three batches: that panel verifies gas, drift and carry, and its 300 s interval is indicative (across 30 seeds the point moves ±0.014 bp around the model). The option term is verified on the gas ÷ 10 panel, where every point has thousands of exercises and coverage is nominal.
 
-## 2 · Finite capital, payments of different sizes
+## Concurrency (Part A)
 
-The brief fixes payments at 1,000. With one size and one corridor the inventory question has no decision in it: quote first-come up to capacity, never naked (the brief's "50 live quotes, inventory for 10"). It becomes a decision once sizes vary, so here they are lognormal around 1,000 (`Sizes`), capital is C source units, and we quote a market-set markup of 150 bp with a 1-minute window.
-
-Gas is a fixed cost per fill, so a quote of size a earns **π(a) = α·a − β** in expectation (`profit_line`; at 150 bp payments under 846 units lose money) and ties up **a·T** of capital-time, T being the seconds a payment stays reserved, then locked (157 s). Choosing which auctions to quote is a fractional knapsack:
-
-  maximise Σ x(a)·π(a)  subject to  Σ x(a)·a·T ≤ C,  0 ≤ x(a) ≤ λ·f(a).
-
-Its solution is greedy by yield π(a)/(a·T), which rises with size, so the optimal policy is a **threshold: quote iff a ≥ a_min**, where a_min is the gas break-even size while capital is slack and otherwise the size at which demand just fills the capital. The LP's dual **λ\* is the bid price**: what every unit of capital must earn per second (Talluri–van Ryzin bid-price control; `bid_price`, closed form via the lognormal partial mean). Is it convex? Yes, it is an LP, and the threshold is its closed-form solution; the fluid relaxation is an upper bound that becomes exact once capital is large next to a payment. The dynamic version (react to the capital free right now) is an MDP whose value is concave in capital, which is why one bid price is near-optimal.
-
-Engine runs of 20,000 s, payments drawn from the same distribution, profit per hour in source units:
-
-| capital | quote sizes ≥ | bid price (bp/h) | threshold, fluid | threshold, engine | quote everything you can fund |
-|---|---|---|---|---|---|
-| 10,000 | 7,554 | 2,111 | 2,142 | 942 | −2,417 |
-| 50,000 | 4,935 | 1,970 | 10,440 | 7,302 | −3,874 |
-| 200,000 | 2,040 | 1,392 | 35,810 | 31,834 | 7,664 |
-| 500,000 | 846 | 0 | 49,793 | 50,099 | 39,871 |
-
-Two things to read off it. Quoting everything you can fund *loses money* while capital is scarce: the payments that still fit when capital is nearly full are the small ones, and those do not cover gas; selecting by size turns that into a profit at every capital level. And the fluid line overstates the engine at small capital (packing: a 7,500 quote on 10,000 of capital blocks everything else), converging above ~200,000 (engine rows carry about ±600/h of rate-path noise at 500,000, which is why that one sits a hair above the bound).
-
-The window enters through T, the seconds each payment of capital stays tied up: 121 s at a 5 s window, 313 s at 5 minutes. At fixed capital a longer window raises the threshold (7,132 → 8,494 at C = 10,000) and the capital charge per quote, λ\*·T, while λ\* itself falls. That charge, 47–93 bp of the payment across the table, is what the window really costs; the option in §1 is at most 0.25 bp.
+A live quote reserves its full payment of capital and an award locks it until release (`settler/engine.py`), so the engine only quotes what it can fund: with 50 live quotes and capital for 10, the 11th auction is declined. No quote is ever naked, and with one payment size and one corridor there is nothing further to optimise. The window still matters here: a longer window keeps capital reserved longer, so the same capital completes fewer payments per second.
 
 ## Run
 
     pip install -r requirements.txt      # Python 3.9+, numpy, scipy, matplotlib, pytest
-    python3 -m pytest -q                 # 13 tests, under a second
+    python3 -m pytest -q                 # 10 tests, under a second
     python3 run.py                       # results/, docs/data.js, chart/  (a few seconds)
 
 ## Notes
@@ -67,8 +46,8 @@ The window enters through T, the seconds each payment of capital stays tied up: 
 - **Instrument:** markouts of awarded quotes by time-to-award (walk-aways plus the deadline spike give p, their ratio q), realised σ against the EWMA, and realised break-even minus quoted markup with a CI.
 - **Polygon vs Solana:** same price (carry < 0.02 bp on either chain) but 256 s vs 13 s of locked capital: at W = 60 s the same corridor turns inventory 4.5× slower on Polygon (14× at 5 s, under 2× at 5 min, where the window itself dominates the cycle), and if rebalancing happens at release the rate variance over the lock is 20× larger.
 - **Missing from the protocol:** cancel or re-price a live quote (kills the option), a published penalty for failed fulfilment (prices overbooking), originator identity (p per counterparty).
-- **With more time:** a packing-aware version of the threshold for small capital (the fluid LP is 2× optimistic at 10,000); overbooking against the walk-away rate once the protocol publishes a penalty for unfunded awards (a newsvendor fractile, with informed originators exercising together); importance-sample the informed tail so the spec-gas option is verified at 300 s instead of waiting for a rare cluster.
+- **With more time:** overbooking against the walk-away rate once the protocol publishes a penalty for unfunded awards; importance-sample the informed tail so the spec-gas option is verified at 300 s instead of waiting for a rare cluster.
 
 ## Assumptions
 
-Student-t(ν = 4) for the quote, the spec's Gaussian process (uncorrected log steps, +0.035 bp at 300 s) for the simulation. Ethereum: L = 2 blocks (24 s), lock = 12 blocks (144 s). Cost of capital 10 %/yr. Fulfilment deadlines U(0, 1 h) ahead, since the spec gives none. Payment sizes lognormal(1,000, 0.8) in §2 only; capital is divisible in the fluid model, whole in the engine. Risk-neutral settler, price-inelastic uninformed demand, one corridor.
+Student-t(ν = 4) for the quote, the spec's Gaussian process (uncorrected log steps, +0.035 bp at 300 s) for the simulation. Ethereum: L = 2 blocks (24 s), lock = 12 blocks (144 s). Cost of capital 10 %/yr. Fulfilment deadlines U(0, 1 h) ahead, since the spec gives none. Risk-neutral settler, price-inelastic uninformed demand, one corridor.

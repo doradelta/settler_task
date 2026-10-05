@@ -2,9 +2,8 @@
 
 Lifecycle: on_auction -> Quote | Decline; on_award (reserved -> committed); on_expiry / on_release (freed).
 
-Inventory is capital in source units. A live quote reserves its full amount (never a naked quote) and an
-award locks it until release. Admission is a size threshold from the bid price (settler/allocation.py):
-a quote whose expected profit does not cover the shadow price of the capital it ties up is declined.
+Concurrency: a live quote reserves its full amount of capital and an award locks it until release, so we
+only quote what we can fund (never a naked quote). With 50 live quotes and capital for 10, the 11th is declined.
 """
 from __future__ import annotations
 
@@ -17,7 +16,6 @@ from .pricing import Market, fair_markup
 
 class Reason(str, Enum):
     INFEASIBLE = "infeasible"    # fulfillment_deadline leaves less than the settlement latency
-    TOO_SMALL = "too_small"      # below the bid-price threshold: would not pay for the capital it ties up
     NO_CAPITAL = "no_capital"    # every unit of capital is reserved or locked
 
 
@@ -51,7 +49,6 @@ class Decline:
 @dataclass
 class Inventory:
     capital: Optional[float] = None  # source units we can front; None = unlimited
-    min_size: float = 0.0            # bid-price threshold; 0 = quote anything we can fund
     reserved: float = 0.0
     committed: float = 0.0
 
@@ -93,8 +90,6 @@ class Engine:
         latest_safe_bid = a.fulfillment_deadline - self.market.latency
         if latest_safe_bid <= now:
             return Decline(a.id, Reason.INFEASIBLE)
-        if a.amount < self.inventory.min_size:
-            return Decline(a.id, Reason.TOO_SMALL)
         deadline = min(now + self.window, latest_safe_bid)
         m = self.markup(deadline - now)             # price before reserving: a pricing error leaks no capital
         if not self.inventory.try_reserve(a.amount):

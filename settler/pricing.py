@@ -50,9 +50,9 @@ def window_std(window: float, mk: Market) -> float:
     return mk.sigma * math.sqrt(window if k <= 0.0 else (1.0 - math.exp(-2.0 * k * window)) / (2.0 * k))
 
 
-def expected_pnl(m: float, window: float, mk: Market, amount: float | None = None) -> tuple[float, float]:
-    """Expected profit per quote of size `amount` (default N) at markup m, and q = P(informed originator awards)."""
-    N, p, K = (mk.notional if amount is None else amount), mk.p_informed, 1.0 + m
+def expected_pnl(m: float, window: float, mk: Market) -> tuple[float, float]:
+    """Expected profit per quote at markup m, and q = P(informed originator awards)."""
+    N, p, K = mk.notional, mk.p_informed, 1.0 + m
     drift = 1.0 + (mk.sigma**2 * (window / 4 + mk.latency / 2) if mk.mean_reversion <= 0.0 else 0.0)  # spec log steps have no -σ²/2
     uninformed = N * (1.0 - drift / K) - mk.gas_mean           # awards at a random time, any price
     call, q = tail_call(m, window_std(window, mk), mk.nu)

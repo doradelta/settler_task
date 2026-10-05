@@ -4,9 +4,9 @@ import numpy as np
 import pytest
 from scipy import integrate, stats
 
-from settler import (Auction, Decline, Engine, Inventory, Market, Quote, Sizes, bid_price, breakeven, expected_pnl,
-                     fair_markup, gas_floor, held_seconds, profit_line, realized_sigma, tail_call, window_std)
-from settler.simulate import capacity_run, pnl_at_fixed_markup, spec_market
+from settler import (Auction, Decline, Engine, Inventory, Market, Quote, breakeven, fair_markup, gas_floor,
+                     realized_sigma, tail_call, window_std)
+from settler.simulate import pnl_at_fixed_markup, spec_market
 
 MK = Market()
 
@@ -39,9 +39,8 @@ def test_mean_reversion_caps_the_price_of_time():
 
 
 def test_engine_feasibility_capping_and_capital_reservation():
-    eng = Engine(MK, window=300.0, inventory=Inventory(capital=2000.0, min_size=200.0))
+    eng = Engine(MK, window=300.0, inventory=Inventory(capital=2000.0))
     assert isinstance(eng.on_auction(Auction(0, 0.0, 20.0), 0.0, 1.0), Decline)   # 20 s left < 24 s latency
-    assert eng.on_auction(Auction(1, 0.0, 4000.0, amount=150.0), 0.0, 1.0).reason.value == "too_small"
     q = eng.on_auction(Auction(2, 0.0, 100.0), 0.0, 1.0)
     assert isinstance(q, Quote) and q.award_deadline == 76.0 and q.markup < eng.markup(300.0)
     assert isinstance(eng.on_auction(Auction(3, 1.0, 4000.0), 1.0, 1.0), Quote)
@@ -50,35 +49,6 @@ def test_engine_feasibility_capping_and_capital_reservation():
     assert eng.inventory.committed == 1000.0 and isinstance(eng.on_auction(Auction(5, 3.0, 4000.0), 3.0, 1.0), Decline)
     eng.on_release(q.id)
     assert isinstance(eng.on_auction(Auction(6, 4.0, 4000.0), 4.0, 1.0), Quote)
-
-
-def test_profit_is_linear_in_size_with_gas_as_the_fixed_cost():
-    a, b = profit_line(0.015, 60.0, MK)
-    for size in (300.0, 1000.0, 4000.0):
-        assert a * size - b == pytest.approx(expected_pnl(0.015, 60.0, MK, size)[0], rel=1e-9)
-    assert b == pytest.approx(MK.gas_mean * (1 - MK.p_informed * (1 - expected_pnl(0.015, 60.0, MK)[1])), rel=1e-9)
-
-
-def test_bid_price_threshold_is_the_knapsack_optimum():
-    sizes, lam, m, W = Sizes(1000.0, 0.8), 2.0, 0.015, 60.0
-    a, b, T = *profit_line(m, W, MK), held_seconds(m, W, MK)
-    grid = np.exp(np.linspace(math.log(30), math.log(80_000), 6000))                        # discretised sizes
-    weight = lam * stats.lognorm.pdf(grid, sizes.log_sd, scale=sizes.median) * np.gradient(grid)
-    profit, usage = (a * grid - b) * weight, grid * T * weight
-    order = np.argsort(-(a * grid - b) / (grid * T))                                         # greedy by yield
-    for capital in (5_000.0, 50_000.0, 1e9):
-        fits = grid[order] <= capital                                                         # one payment we cannot fund
-        taken = (np.cumsum(usage[order] * fits) <= capital) & (profit[order] > 0) & fits
-        assert bid_price(m, W, MK, capital, lam, sizes).profit_per_s == pytest.approx(profit[order][taken].sum(), rel=0.02)
-    slack = bid_price(m, W, MK, 1e9, lam, sizes)
-    assert slack.bid_price == 0.0 and slack.min_size == pytest.approx(b / a)
-
-
-def test_capacity_run_follows_the_bid_price():
-    sizes = Sizes(1000.0, 0.8)
-    bp = bid_price(0.015, 60.0, MK, 20_000.0, 2.0, sizes)
-    sim = capacity_run(60.0, MK, 20_000.0, 0.015, seconds=10_000, sizes=sizes, min_size=bp.min_size)
-    assert 0.0 < sim["accept_share"] <= bp.accept_share + 1e-9 and 0.3 < sim["utilisation"] <= 1.0   # blocking only removes quotes
 
 
 def test_vectorised_quote_rule_is_the_engine():
