@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Settler Quote Engine</title>
+<style>
+:root{--ink:#142033;--ink2:#3c4859;--mute:#6b7685;--rule:#dde3ea;--bg:#f6f8fa;--card:#fff;--blue:#1f4f8f;--orange:#d2602c;--band:#e9eef5}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 -apple-system,"Segoe UI",Inter,Roboto,sans-serif;padding:0 16px 48px}
+main{max-width:920px;margin:0 auto}
+h1{font-size:30px;margin:36px 0 4px}
+h2{font-size:21px;margin:40px 0 8px}
+p{margin:0 0 10px;color:var(--ink2)}
+.sub{color:var(--mute);font-size:14px}
+.card{background:var(--card);border:1px solid var(--rule);border-radius:10px;padding:12px 14px;margin:12px 0}
+svg{display:block;width:100%;height:auto}
+svg text{font-family:inherit;fill:var(--ink2);font-size:12px}
+.ctrl{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px 18px;margin:8px 0 4px}
+label{display:block;font-size:13px;color:var(--ink2)}
+label b{float:right;font-weight:600;color:var(--ink);font-variant-numeric:tabular-nums}
+input[type=range]{width:100%;margin:2px 0 0}
+.read{display:flex;gap:18px;flex-wrap:wrap;font-size:14px;color:var(--ink2);margin-top:6px}
+.read b{color:var(--ink);font-variant-numeric:tabular-nums}
+code{font-size:.9em;background:#eef1f5;padding:1px 5px;border-radius:4px}
+.leg{display:flex;gap:14px;flex-wrap:wrap;font-size:13px;color:var(--ink2)}
+.leg i{display:inline-block;width:16px;height:3px;vertical-align:middle;margin-right:5px;border-radius:2px}
+.leg .dot{width:9px;height:9px;border-radius:50%;background:var(--ink)}
+.tip{position:absolute;pointer-events:none;background:#fff;border:1px solid var(--rule);border-radius:6px;padding:6px 9px;font-size:12px;box-shadow:0 3px 12px rgba(0,0,0,.1);white-space:nowrap}
+.wrap{position:relative}
+</style>
+</head>
+<body>
+<main>
+<h1>Settler Quote Engine</h1>
+<p>Two problems. <b>1.</b> A firm quote is a free option: price the time it stays open. <b>2.</b> Finite inventory under many live quotes: how many to keep out. Everything below is computed live; the dots are the engine's quote rule run against the specified market.</p>
+
+<h2>1 · What a firm quote gives away</h2>
+<div class="card">
+<svg viewBox="0 0 900 236" role="img" aria-label="Timeline of one quote: the price is fixed from the quote to the award deadline while the market moves; after the award the settler fronts capital that stays locked until release.">
+  <defs><marker id="m" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L8 4 0 8z" fill="#6b7685"/></marker></defs>
+  <rect x="80" y="30" width="350" height="26" rx="5" fill="#dce8f8" stroke="#1f4f8f"/><text x="255" y="48" text-anchor="middle" fill="#142033">① option: the originator picks the moment, we hold the price</text>
+  <rect x="330" y="64" width="230" height="22" rx="5" fill="#eef1f5" stroke="#dde3ea"/><text x="445" y="80" text-anchor="middle" fill="#6b7685">rate moves until we execute</text>
+  <rect x="560" y="30" width="240" height="26" rx="5" fill="#fbe5d9" stroke="#d2602c"/><text x="680" y="48" text-anchor="middle" fill="#142033">② our capital locked: confirmation depth</text>
+  <line x1="40" y1="114" x2="870" y2="114" stroke="#6b7685" stroke-width="1.5" marker-end="url(#m)"/>
+  <g stroke="#142033" stroke-width="1.5"><line x1="80" y1="107" x2="80" y2="121"/><line x1="330" y1="107" x2="330" y2="121"/><line x1="430" y1="107" x2="430" y2="121"/><line x1="560" y1="107" x2="560" y2="121"/><line x1="800" y1="107" x2="800" y2="121"/></g>
+  <text x="80" y="140" text-anchor="middle">quote t₀</text><text x="80" y="156" text-anchor="middle" fill="#6b7685">price Q = R₀(1+m) fixed</text>
+  <text x="430" y="140" text-anchor="middle">award_deadline (t₀ + W)</text><text x="430" y="156" text-anchor="middle" fill="#6b7685">informed: awards only if R &gt; Q</text>
+  <text x="800" y="140" text-anchor="middle">release (+T_lock)</text><text x="800" y="156" text-anchor="middle" fill="#6b7685">escrow pays us N</text>
+  <text x="330" y="178" text-anchor="middle">award</text><text x="330" y="194" text-anchor="middle" fill="#6b7685">uninformed: a random time in W</text>
+  <text x="560" y="178" text-anchor="middle">fulfil (+L)</text><text x="560" y="194" text-anchor="middle" fill="#6b7685">we pay D = N/Q on the destination chain</text>
+  <line x1="80" y1="222" x2="330" y2="222" stroke="#1f4f8f" stroke-width="3" stroke-dasharray="6 4"/><line x1="330" y1="222" x2="800" y2="222" stroke="#1f4f8f" stroke-width="3"/>
+  <text x="84" y="216" fill="#6b7685">one payment of inventory: reserved …</text><text x="620" y="216" fill="#6b7685">… then committed (problem 2)</text>
+</svg>
+</div>
+
+<h2>Markup versus award window</h2>
+<p>Break-even markup m*(W): gas floor + the expected loss to originators who exercise against us + carry. Returns are Student-t with ν degrees of freedom (variance σ²W); drag ν to the right for the Gaussian limit the spec simulates.</p>
+<div class="card">
+<div class="ctrl">
+  <label>ν (nu): tail heaviness <b id="nuV"></b><input id="nu" type="range" min="2.5" max="30.5" step="0.5" value="4"></label>
+  <label>σ, bp per √s <b id="sgV"></b><input id="sg" type="range" min="0.5" max="10" step="0.5" value="2"></label>
+  <label>p informed <b id="pV"></b><input id="p" type="range" min="0" max="0.9" step="0.05" value="0.3"></label>
+  <label>mean gas, units per fill <b id="gV"></b><input id="g" type="range" min="0" max="20" step="0.25" value="12.5"></label>
+  <label><input id="ext" type="checkbox"> extend the axis to 1 hour</label>
+</div>
+<div class="wrap"><svg id="c1" viewBox="0 0 900 360"></svg><div id="t1" class="tip" hidden></div></div>
+<div class="leg"><span><i style="background:var(--blue)"></i>Student-t model</span><span><i style="background:var(--orange)"></i>Gaussian model (ν = ∞)</span><span><i class="dot"></i>quote rule on the spec market, 95% CI (at σ = 2, p = 0.3, gas 12.5 or 1.25)</span><span><i style="background:#9aa3ad;height:1px"></i>gas floor</span></div>
+<div class="read"><span>at W = 300 s: m* <b id="r1"></b></span><span>premium over floor <b id="r2"></b></span><span>P(informed awards) <b id="r3"></b></span><span>knee (strike 2σ away) <b id="r4"></b></span></div>
+</div>
+
+<h2>The option you wrote</h2>
+<p>The distribution of the rate move over one window, against the strike it is measured on: our own price. An originator who waits exercises only in the shaded tail; its mass is q and its mean depth is the markout we eat on those fills. Same sliders as above, plus the window.</p>
+<div class="card">
+<div class="ctrl"><label>window W, seconds <b id="wV"></b><input id="w" type="range" min="5" max="300" step="5" value="300"></label></div>
+<svg id="c1b" viewBox="0 0 900 230"></svg>
+<div class="leg"><span><i style="background:var(--blue)"></i>Student-t</span><span><i style="background:var(--orange)"></i>Gaussian, same variance</span><span><i style="background:#9fb6d8;height:9px;width:14px"></i>informed originator exercises (Student-t)</span></div>
+<div class="read"><span>q, Student-t <b id="d1"></b></span><span>q, Gaussian <b id="d2"></b></span><span>markout of an informed fill C/q: Student-t <b id="d3"></b></span><span>Gaussian <b id="d4"></b></span></div>
+</div>
+
+<h2>2 · Finite inventory, many live quotes</h2>
+<p>Each live quote reserves one payment. With capacity C and n live quotes, the awards A are the uninformed (they always fill) plus the informed, who watch the same rate path and fill together with probability q or not at all. The n-th quote adds ΔE<sub>n</sub> = q·1{n &gt; C} + (1−p)(1−q)·P(Bin(n−1, 1−p) ≥ C) expected unfunded awards, non-decreasing in n, so expected profit n·p_fill·margin − F·E[(A − C)⁺] is concave and the optimum is a critical fractile: keep quoting while p_fill·margin ≥ F·ΔE<sub>n</sub>. F = ∞ is hard reservation (n = C).</p>
+<div class="card">
+<div class="ctrl">
+  <label>capacity C, payments <b id="cV"></b><input id="c" type="range" min="1" max="40" step="1" value="10"></label>
+  <label>p informed <b id="p2V"></b><input id="p2" type="range" min="0" max="0.9" step="0.05" value="0.3"></label>
+  <label>q, informed exercise together <b id="q2V"></b><input id="q2" type="range" min="0" max="0.5" step="0.01" value="0"></label>
+  <label>margin per fill, bp <b id="mgV"></b><input id="mg" type="range" min="1" max="50" step="1" value="10"></label>
+  <label>penalty F, % of notional <b id="fV"></b><input id="f" type="range" min="0.1" max="10" step="0.1" value="1"></label>
+</div>
+<div class="wrap"><svg id="c2" viewBox="0 0 900 320"></svg><div id="t2" class="tip" hidden></div></div>
+<div class="read"><span>p_fill <b id="s0"></b></span><span>hard reservation <b id="s1"></b></span><span>newsvendor n* <b id="s2"></b></span><span>P(overdraft) at n* <b id="s3"></b></span><span>expected unfunded fills <b id="s4"></b></span></div>
+</div>
+
+<h2>Why the window costs inventory, not price</h2>
+<p>Hard reservation, capacity 10, spec market: fills per second from the engine against the renewal closed form C·p_fill / (held + 1/λ). Longer windows keep slots reserved but idle.</p>
+<div class="card"><svg id="c3" viewBox="0 0 900 260"></svg>
+<div class="leg"><span><i style="background:var(--blue)"></i>closed form</span><span><i class="dot"></i>engine, 20,000 s</span></div></div>
+<p class="sub">Seed 20261002. <code>python3 run.py</code> regenerates every number on this page.</p>
+</main>
+<script src="data.js"></script>
+<script>
+/* ---------- distributions ---------- */
+function lgamma(x){const c=[0.99999999999980993,676.5203681218851,-1259.1392167224028,771.32342877765313,-176.61502916214059,12.507343278686905,-0.13857109526572012,9.9843695780195716e-6,1.5056327351493116e-7];if(x<0.5)return Math.log(Math.PI/Math.sin(Math.PI*x))-lgamma(1-x);x-=1;let a=c[0];const t=x+7.5;for(let i=1;i<9;i++)a+=c[i]/(x+i);return 0.5*Math.log(2*Math.PI)+(x+0.5)*Math.log(t)-t+Math.log(a)}
+function betacf(a,b,x){let qab=a+b,qap=a+1,qam=a-1,c=1,d=1-qab*x/qap;if(Math.abs(d)<1e-300)d=1e-300;d=1/d;let h=d;for(let m=1;m<=300;m++){const m2=2*m;let aa=m*(b-m)*x/((qam+m2)*(a+m2));d=1+aa*d;if(Math.abs(d)<1e-300)d=1e-300;c=1+aa/c;if(Math.abs(c)<1e-300)c=1e-300;d=1/d;h*=d*c;aa=-(a+m)*(qab+m)*x/((a+m2)*(qap+m2));d=1+aa*d;if(Math.abs(d)<1e-300)d=1e-300;c=1+aa/c;if(Math.abs(c)<1e-300)c=1e-300;d=1/d;const del=d*c;h*=del;if(Math.abs(del-1)<3e-14)break}return h}
+function ibeta(a,b,x){if(x<=0)return 0;if(x>=1)return 1;const bt=Math.exp(lgamma(a+b)-lgamma(a)-lgamma(b)+a*Math.log(x)+b*Math.log(1-x));return x<(a+1)/(a+b+2)?bt*betacf(a,b,x)/a:1-bt*betacf(b,a,1-x)/b}
+function tpdf(t,nu){return Math.exp(lgamma((nu+1)/2)-lgamma(nu/2))/Math.sqrt(nu*Math.PI)*Math.pow(1+t*t/nu,-(nu+1)/2)}
+function tsf(t,nu){const h=0.5*ibeta(nu/2,0.5,nu/(nu+t*t));return t>=0?h:1-h}
+function npdf(x){return Math.exp(-0.5*x*x)/Math.sqrt(2*Math.PI)}
+function nsf(x){const z=Math.abs(x)/Math.SQRT2,t=1/(1+0.5*z);const r=t*Math.exp(-z*z-1.26551223+t*(1.00002368+t*(0.37409196+t*(0.09678418+t*(-0.18628806+t*(0.27886807+t*(-1.13520398+t*(1.48851587+t*(-0.82215223+t*0.17087277)))))))));return 0.5*(x>=0?r:2-r)}
+function tailCall(k,s,nu){ // E[(r-k)+], P(r>k) for sd s, Student-t(nu) shape (nu=Infinity: Gaussian)
+  if(s<=0)return[Math.max(-k,0),k<0?1:0];
+  if(!isFinite(nu)){const a=k/s;return[s*(npdf(a)-a*nsf(a)),nsf(a)]}
+  const c=s*Math.sqrt((nu-2)/nu),a=k/c;return[c*((nu+a*a)/(nu-1)*tpdf(a,nu)-a*tsf(a,nu)),tsf(a,nu)]}
+function binomPmf(n,p){p=Math.min(Math.max(p,1e-12),1-1e-12);const out=[];for(let k=0;k<=n;k++)out.push(Math.exp(lgamma(n+1)-lgamma(k+1)-lgamma(n-k+1)+k*Math.log(p)+(n-k)*Math.log(1-p)));return out}
+
+/* ---------- pricing ---------- */
+const N=1000,L=24,LOCK=144,R=0.10,YEAR=31557600;
+function pnl(m,W,P){const K=1+m,drift=1+P.sigma*P.sigma*(W/4+L/2);const un=N*(1-drift/K)-P.gas;const[C,q]=tailCall(m,P.sigma*Math.sqrt(W),P.nu);const inf=-(N/K*C+P.gas*q);
+  const held=(1-P.p)*(W/2+L+LOCK)+P.p*(W+q*(L+LOCK));return[(1-P.p)*un+P.p*inf-R*N*held/YEAR,q]}
+function fair(W,P){let lo=0,hi=0.5;for(let i=0;i<60;i++){const mid=(lo+hi)/2;if(pnl(mid,W,P)[0]>0)hi=mid;else lo=mid}return(lo+hi)/2}
+
+/* ---------- svg helpers ---------- */
+const NS='http://www.w3.org/2000/svg';
+function el(svg,n,a,txt){const e=document.createElementNS(NS,n);for(const k in a)e.setAttribute(k,a[k]);if(txt!=null)e.textContent=txt;svg.appendChild(e);return e}
+function clear(svg){while(svg.firstChild)svg.removeChild(svg.firstChild)}
+function ticks(lo,hi,n){const span=hi-lo,raw=span/n,p=Math.pow(10,Math.floor(Math.log10(raw))),f=raw/p,step=(f<1.5?1:f<3.5?2:f<7.5?5:10)*p,out=[];for(let v=Math.ceil(lo/step)*step;v<=hi+1e-9;v+=step)out.push(+v.toFixed(10));return out}
+function fmt(v,d){return v.toFixed(d)}
+function tip(div,wrapSvg,x,y,html){div.innerHTML=html;div.hidden=false;const bb=wrapSvg.getBoundingClientRect();const px=x*bb.width/wrapSvg.viewBox.baseVal.width,py=y*bb.height/wrapSvg.viewBox.baseVal.height;div.style.left=Math.min(px+12,bb.width-div.offsetWidth-4)+'px';div.style.top=Math.max(py-40,4)+'px'}
+
+/* ---------- chart 1: markup vs window ---------- */
+const $=id=>document.getElementById(id);
+let Wgrid=[];
+function draw1(){
+  const XMAX=$('ext').checked?3600:300;Wgrid=[];for(let x=Math.log(5);x<=Math.log(XMAX)+1e-9;x+=(Math.log(XMAX)-Math.log(5))/70)Wgrid.push(Math.exp(x));
+  const nuRaw=+$('nu').value,P={nu:nuRaw>30?Infinity:nuRaw,sigma:+$('sg').value*1e-4,p:+$('p').value,gas:+$('g').value};
+  $('nuV').textContent=isFinite(P.nu)?P.nu:'∞ (Gaussian)';$('sgV').textContent=$('sg').value;$('pV').textContent=$('p').value;$('gV').textContent=P.gas.toFixed(2)+' ('+(P.gas/10).toFixed(3)+'%)';
+  const floor=P.gas/(N-P.gas)*1e4;
+  const t=Wgrid.map(W=>fair(W,P)*1e4),g=Wgrid.map(W=>fair(W,{...P,nu:Infinity})*1e4);
+  const scen=(Math.abs(P.sigma-2e-4)<1e-9&&Math.abs(P.p-0.3)<1e-9)?(Math.abs(P.gas-12.5)<1e-9?'spec':Math.abs(P.gas-1.25)<1e-9?'gas_div10':null):null;
+  const sim=scen&&window.SIM?SIM.curve[scen].rows:[];
+  const svg=$('c1');clear(svg);const ML=70,MR=20,MT=16,MB=44,W_=900,H=360,pw=W_-ML-MR,ph=H-MT-MB;
+  const ys=[...t,...g,floor,...sim.map(r=>r.sim_bp+r.ci_bp),...sim.map(r=>r.sim_bp-r.ci_bp)];let lo=Math.min(...ys),hi=Math.max(...ys);const pad=(hi-lo)*0.08||0.01;lo-=pad;hi+=pad;
+  const X=w=>ML+(Math.log(w)-Math.log(5))/(Math.log(XMAX)-Math.log(5))*pw,Y=v=>MT+(1-(v-lo)/(hi-lo))*ph;
+  if(XMAX>300){el(svg,'rect',{x:X(5),y:MT,width:X(300)-X(5),height:ph,fill:'var(--band)'});el(svg,'text',{x:X(5)+6,y:MT+14,fill:'#6b7685'},'spec range: 5 s – 5 min')}
+  ticks(lo,hi,6).forEach(v=>{el(svg,'line',{x1:ML,x2:ML+pw,y1:Y(v),y2:Y(v),stroke:'#e6eaef'});el(svg,'text',{x:ML-8,y:Y(v)+4,'text-anchor':'end'},fmt(v,hi-lo<1?3:hi-lo<10?2:1))});
+  [[5,'5 s'],[10,'10 s'],[30,'30 s'],[60,'1 min'],[120,'2 min'],[300,'5 min'],[1200,'20 min'],[3600,'1 h']].filter(([w])=>w<=XMAX).forEach(([w,s])=>{el(svg,'line',{x1:X(w),x2:X(w),y1:MT+ph,y2:MT+ph+5,stroke:'#6b7685'});el(svg,'text',{x:X(w),y:MT+ph+20,'text-anchor':'middle'},s)});
+  el(svg,'text',{x:ML+pw/2,y:H-6,'text-anchor':'middle',fill:'#6b7685'},'award window W (log scale)');el(svg,'text',{x:14,y:MT+ph/2,transform:`rotate(-90 14 ${MT+ph/2})`,'text-anchor':'middle',fill:'#6b7685'},'markup m* (bp)');
+  el(svg,'line',{x1:ML,x2:ML+pw,y1:Y(floor),y2:Y(floor),stroke:'#9aa3ad','stroke-dasharray':'3 4'});
+  const path=a=>a.map((v,i)=>(i?'L':'M')+X(Wgrid[i]).toFixed(1)+' '+Y(v).toFixed(1)).join(' ');
+  el(svg,'path',{d:path(g),fill:'none',stroke:'var(--orange)','stroke-width':2});el(svg,'path',{d:path(t),fill:'none',stroke:'var(--blue)','stroke-width':2.2});
+  sim.forEach(r=>{el(svg,'line',{x1:X(r.window),x2:X(r.window),y1:Y(r.sim_bp-r.ci_bp),y2:Y(r.sim_bp+r.ci_bp),stroke:'#142033'});el(svg,'circle',{cx:X(r.window),cy:Y(r.sim_bp),r:3.5,fill:'#142033',stroke:'#fff','stroke-width':1.5})});
+  const m300=fair(300,P),[,q300]=pnl(m300,300,P);$('r1').textContent=(m300*1e4).toFixed(3)+' bp';$('r2').textContent=(m300*1e4-floor).toFixed(3)+' bp';$('r3').textContent=q300<1e-3?q300.toExponential(1):q300.toFixed(3);
+  const knee=Math.pow(Math.log(1+P.gas/(N-P.gas))/(2*P.sigma),2);$('r4').textContent=knee<1?'< 1 s':knee<60?knee.toFixed(0)+' s':knee<3600?(knee/60).toFixed(1)+' min':(knee/3600).toFixed(1)+' h';
+  const cross=el(svg,'line',{y1:MT,y2:MT+ph,stroke:'#142033',opacity:0}),hit=el(svg,'rect',{x:ML,y:MT,width:pw,height:ph,fill:'transparent'});
+  hit.onpointermove=e=>{const bb=svg.getBoundingClientRect(),vx=(e.clientX-bb.left)*W_/bb.width;let i=0,bd=1e9;Wgrid.forEach((w,j)=>{const d=Math.abs(X(w)-vx);if(d<bd){bd=d;i=j}});
+    cross.setAttribute('x1',X(Wgrid[i]));cross.setAttribute('x2',X(Wgrid[i]));cross.setAttribute('opacity',.4);const w=Wgrid[i];
+    const rr=sim.find(r=>Math.abs(Math.log(r.window)-Math.log(w))<0.08);tip($('t1'),svg,X(w),Y(t[i]),`<b>W = ${w<60?w.toFixed(1)+' s':(w/60).toFixed(1)+' min'}</b><br>Student-t: <b>${t[i].toFixed(3)} bp</b><br>Gaussian: ${g[i].toFixed(3)} bp<br>floor: ${floor.toFixed(3)} bp`+(rr?`<br>quote rule, spec market: ${rr.sim_bp.toFixed(3)} ± ${rr.ci_bp.toFixed(3)} bp`:''))};
+  hit.onpointerleave=()=>{$('t1').hidden=true;cross.setAttribute('opacity',0)};
+}
+['nu','sg','p','g','ext'].forEach(id=>$(id).addEventListener('input',draw1));
+
+
+/* ---------- drawing: the option you wrote ---------- */
+function draw1b(){
+  const nuRaw=+$('nu').value,P={nu:nuRaw>30?Infinity:nuRaw,sigma:+$('sg').value*1e-4,p:+$('p').value,gas:+$('g').value},W=+$('w').value;$('wV').textContent=W+' s';
+  const s=P.sigma*Math.sqrt(W),m=fair(W,P),c=isFinite(P.nu)?s*Math.sqrt((P.nu-2)/P.nu):s;
+  const ft=r=>isFinite(P.nu)?tpdf(r/c,P.nu)/c:npdf(r/s)/s,fg=r=>npdf(r/s)/s;
+  const xmin=-4*s,xmax=Math.min(Math.max(4*s,m*1.15),8*s),off=m>xmax;
+  const svg=$('c1b');clear(svg);const ML=40,MR=20,MT=14,MB=40,W_=900,H=230,pw=W_-ML-MR,ph=H-MT-MB;
+  const X=r=>ML+(r-xmin)/(xmax-xmin)*pw,ymax=Math.max(ft(0),fg(0))*1.08,Y=v=>MT+(1-v/ymax)*ph;
+  const pts=[];for(let i=0;i<=400;i++){const r=xmin+(xmax-xmin)*i/400;pts.push([r,ft(r),fg(r)])}
+  if(!off){const area=['M'+X(m)+' '+Y(0)];area.push('L'+X(m)+' '+Y(ft(m)));pts.filter(o=>o[0]>m).forEach(o=>area.push('L'+X(o[0]).toFixed(1)+' '+Y(o[1]).toFixed(1)));area.push('L'+X(xmax)+' '+Y(0)+'Z');el(svg,'path',{d:area.join(' '),fill:'#9fb6d8',opacity:0.8})}
+  el(svg,'line',{x1:ML,x2:ML+pw,y1:Y(0),y2:Y(0),stroke:'#6b7685'});
+  el(svg,'path',{d:pts.map((o,i)=>(i?'L':'M')+X(o[0]).toFixed(1)+' '+Y(o[2]).toFixed(1)).join(' '),fill:'none',stroke:'var(--orange)','stroke-width':2});
+  el(svg,'path',{d:pts.map((o,i)=>(i?'L':'M')+X(o[0]).toFixed(1)+' '+Y(o[1]).toFixed(1)).join(' '),fill:'none',stroke:'var(--blue)','stroke-width':2.2});
+  ticks(xmin*1e4,xmax*1e4,8).forEach(v=>{el(svg,'line',{x1:X(v/1e4),x2:X(v/1e4),y1:MT+ph,y2:MT+ph+5,stroke:'#6b7685'});el(svg,'text',{x:X(v/1e4),y:MT+ph+19,'text-anchor':'middle'},v.toFixed(0))});
+  const xm=off?xmax:m;el(svg,'line',{x1:X(xm),x2:X(xm),y1:MT,y2:MT+ph,stroke:'#142033','stroke-dasharray':'4 4'});
+  el(svg,'text',{x:X(xm)-6,y:MT+14,'text-anchor':'end',fill:'#142033'},'our price: +'+(m*1e4).toFixed(1)+' bp = '+(m/s).toFixed(1)+' σ'+(off?' (off axis →)':''));
+  el(svg,'text',{x:ML+pw/2,y:H-4,'text-anchor':'middle',fill:'#6b7685'},'rate move over the window, bp   (σ√W = '+(s*1e4).toFixed(1)+' bp)');
+  const[Ct,qt]=tailCall(m,s,P.nu),[Cg,qg]=tailCall(m,s,Infinity);
+  const fq=v=>v<1e-3?v.toExponential(1):v.toFixed(3);$('d1').textContent=fq(qt);$('d2').textContent=fq(qg);$('d3').textContent=(qt>0?Ct/qt*1e4:0).toFixed(1)+' bp';$('d4').textContent=(qg>0?Cg/qg*1e4:0).toFixed(1)+' bp';
+}
+['nu','sg','p','g','w'].forEach(id=>$(id).addEventListener('input',draw1b));
+
+/* ---------- chart 2: newsvendor overbooking ---------- */
+function draw2(){
+  const C=+$('c').value,p=+$('p2').value,q=+$('q2').value,margin=+$('mg').value/1e4*N,F=+$('f').value/100*N,pf=1-p*(1-q);
+  $('cV').textContent=C;$('p2V').textContent=p.toFixed(2);$('q2V').textContent=q.toFixed(2);$('mgV').textContent=$('mg').value+' bp';$('fV').textContent=$('f').value+' %';
+  const binTail=(n,pp,k)=>{if(k<=0)return 1;if(k>n)return 0;const pm=binomPmf(n,pp);let t=0;for(let j=k;j<=n;j++)t+=pm[j];return t};
+  const stat=n=>{const pm=binomPmf(n,p);let tail=n>=C?q:0,e=q*Math.max(n-C,0);pm.forEach((w,m)=>{const a=n-m;if(a>=C)tail+=w*(1-q);e+=w*(1-q)*Math.max(a-C,0)});return[tail,e]}; // P(A_n >= C), E[(A_n - C)+]
+  const dE=n=>(n>C?q:0)+(1-p)*(1-q)*binTail(n-1,1-p,C); // extra unfunded award from the n-th quote
+  const bounded=margin<F&&pf>0;let nstar=C;if(bounded){while(F*dE(nstar+1)<=pf*margin&&nstar<C+300)nstar++}
+  const nmax=Math.min(Math.max(C+10,nstar+3),C+60),ns=[],prof=[],pov=[],eov=[];
+  for(let n=C;n<=nmax;n++){const[t,e]=stat(n);ns.push(n);prof.push(n*pf*margin-F*e);pov.push(t);eov.push(e)}
+  const svg=$('c2');clear(svg);const ML=70,MR=20,MT=16,MB=44,W_=900,H=320,pw=W_-ML-MR,ph=H-MT-MB;
+  let hi=Math.max(...prof),lo=Math.max(Math.min(...prof),-1.5*Math.max(hi,0.1));const pad=(hi-lo)*0.1||1;lo-=pad;hi+=pad;
+  const X=n=>ML+(n-ns[0]+0.5)/(ns.length)*pw,Y=v=>MT+(1-(Math.max(v,lo)-lo)/(hi-lo))*ph,bw=pw/ns.length*0.72;
+  ticks(lo,hi,5).forEach(v=>{el(svg,'line',{x1:ML,x2:ML+pw,y1:Y(v),y2:Y(v),stroke:'#e6eaef'});el(svg,'text',{x:ML-8,y:Y(v)+4,'text-anchor':'end'},v.toFixed(Math.abs(hi-lo)<5?2:1))});
+  if(lo<0&&hi>0)el(svg,'line',{x1:ML,x2:ML+pw,y1:Y(0),y2:Y(0),stroke:'#6b7685'});
+  ns.forEach((n,i)=>{const v=prof[i],y0=Y(v),top=Math.min(y0,Y(0)),h=Math.abs(Y(0)-y0);
+    el(svg,'rect',{x:X(n)-bw/2,y:top,width:bw,height:Math.max(h,0),rx:3,fill:n<=C?'#9aa3ad':n<=nstar?'var(--blue)':'#f0b79a'});
+    if(i%Math.ceil(ns.length/24)===0)el(svg,'text',{x:X(n),y:MT+ph+18,'text-anchor':'middle'},n)});
+  el(svg,'line',{x1:X(nstar),x2:X(nstar),y1:MT,y2:MT+ph,stroke:'var(--orange)','stroke-dasharray':'4 4','stroke-width':1.5});el(svg,'text',{x:X(nstar)+6,y:MT+14,fill:'var(--orange)'},'n* = '+nstar);
+  el(svg,'text',{x:ML+pw/2,y:H-6,'text-anchor':'middle',fill:'#6b7685'},'live quotes n   (grey: within capacity · blue: overbooking that pays · peach: the marginal quote loses money)');el(svg,'text',{x:14,y:MT+ph/2,transform:`rotate(-90 14 ${MT+ph/2})`,'text-anchor':'middle',fill:'#6b7685'},'expected profit per round, units');
+  const i=ns.indexOf(nstar);$('s0').textContent=pf.toFixed(2);$('s1').textContent='n = '+C;$('s2').textContent=!bounded?'n = '+C+' (margin ≥ F: no finite optimum, stay hard-reserved)':nstar+(nstar>C?' (+'+(nstar-C)+')':' (no overbooking)');$('s3').textContent=(pov[i]*100).toFixed(1)+' %';$('s4').textContent=eov[i].toFixed(3);
+  const hit=el(svg,'rect',{x:ML,y:MT,width:pw,height:ph,fill:'transparent'});
+  hit.onpointermove=e=>{const bb=svg.getBoundingClientRect(),vx=(e.clientX-bb.left)*W_/bb.width;let j=Math.min(ns.length-1,Math.max(0,Math.floor((vx-ML)/pw*ns.length)));
+    tip($('t2'),svg,X(ns[j]),Y(prof[j]),`<b>n = ${ns[j]}</b><br>expected profit: <b>${prof[j].toFixed(2)}</b><br>P(A ≥ C): ${(pov[j]*100).toFixed(1)} %<br>E[(A − C)⁺]: ${eov[j].toFixed(3)}`)};
+  hit.onpointerleave=()=>{$('t2').hidden=true};
+}
+['c','p2','q2','mg','f'].forEach(id=>$(id).addEventListener('input',draw2));
+
+/* ---------- chart 3: throughput vs window ---------- */
+function draw3(){
+  const svg=$('c3');clear(svg);if(!window.SIM){el(svg,'text',{x:450,y:130,'text-anchor':'middle'},'data.js not loaded: run python3 run.py');return}const rows=SIM.capacity;const ML=70,MR=20,MT=16,MB=44,W_=900,H=260,pw=W_-ML-MR,ph=H-MT-MB;
+  const hi=Math.max(...rows.map(r=>Math.max(r.fills_per_s,r.closed_form_fills_per_s)))*1.15;
+  const X=w=>ML+(Math.log(w)-Math.log(4))/(Math.log(400)-Math.log(4))*pw,Y=v=>MT+(1-v/hi)*ph;
+  ticks(0,hi,4).forEach(v=>{el(svg,'line',{x1:ML,x2:ML+pw,y1:Y(v),y2:Y(v),stroke:'#e6eaef'});el(svg,'text',{x:ML-8,y:Y(v)+4,'text-anchor':'end'},v.toFixed(3))});
+  rows.forEach(r=>{el(svg,'text',{x:X(r.window),y:MT+ph+18,'text-anchor':'middle'},r.window+' s')});
+  el(svg,'path',{d:rows.map((r,i)=>(i?'L':'M')+X(r.window)+' '+Y(r.closed_form_fills_per_s)).join(' '),fill:'none',stroke:'var(--blue)','stroke-width':2});
+  rows.forEach(r=>{el(svg,'circle',{cx:X(r.window),cy:Y(r.fills_per_s),r:4,fill:'#142033',stroke:'#fff','stroke-width':1.5});el(svg,'text',{x:X(r.window),y:Y(r.fills_per_s)-10,'text-anchor':'middle'},r.fills_per_s.toFixed(4)+' · util '+(r.utilisation*100).toFixed(0)+'%')});
+  el(svg,'text',{x:ML+pw/2,y:H-6,'text-anchor':'middle',fill:'#6b7685'},'award window W');el(svg,'text',{x:14,y:MT+ph/2,transform:`rotate(-90 14 ${MT+ph/2})`,'text-anchor':'middle',fill:'#6b7685'},'fills per second');
+}
+draw1();draw1b();draw2();draw3();
+</script>
+</body>
+</html>
