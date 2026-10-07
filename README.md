@@ -59,30 +59,50 @@ Why it is flat: the brief's gas forces a 126.6 bp markup, which puts our price f
 
 **How we know the numbers hold.** The engine's dots match the model at every window, within their error bars. At the brief's gas the informed almost never take a quote (not once below 4 minutes in this run), so those dots mostly check the gas and the drift; the cheap-gas panel, where they take quotes thousands of times, checks the option itself.
 
-## Beyond break-even: hedging, alone or competing
+## Beyond break-even: alone or competing
 
-The break-even price is where we neither win nor lose on average. To make money we quote above it, and how far depends on whether anyone else is quoting. Profit comes first: we are competitive only while it pays.
+Break-even is an average. Any single fill can still lose: between the quote and the moment we exchange the units, the rate can move by more than our markup. So we add a cushion on top of Q\*, and its size depends on whether anyone else is quoting. Profit comes first: we are competitive only while it pays.
+
+**Alone.** Nobody undercuts us, so we can protect every fill. The cushion is the biggest move we are prepared to absorb.
 
 ```math
-Q \;=\; \max\!\Big(\underbrace{Q^{*}\big(1 + z\,\frac{\sigma_{\text{fill}}}{\sqrt{n}}\big)}_{\text{floor}},\;\; \min\!\big(\underbrace{Q^{*}\,(1 + 1/\beta)}_{\text{alone}},\; \underbrace{Q_{\text{rival}} - \varepsilon}_{\text{competing}}\big)\Big)
+Q_{\text{alone}} \;=\; Q^{*}\,\big(1 + z\,\sigma\sqrt{T}\,\big)
 ```
 
-*Never below break-even plus a small safety margin; alone, as high as customers accept; competing, just under the best rival.*
+*Break-even, plus the move the rate can make while we are exposed, times how sure we want to be.*
 
 ```
-Q   the price we actually quote
-├── floor       break-even plus a safety margin we never give up: about 1.4 bp
-│               sized so that about 99 days in 100 are profitable at ~5,000 fills a day;
-│               it is small because, once the rate risk is hedged, what is left
-│               (mostly the randomness of gas) averages out over many fills
-├── alone       with no rival: the highest price customers still accept
-│               β says how many fills we lose per extra bp of markup; it is measured,
-│               e.g. losing 5 % of fills per bp gives 20 bp above break-even
-└── competing   one tick under the best rival's price;
-                if that would be below our floor, we let the rival win
+Q_alone   the price we quote when we are the only settler
+├── Q*   the break-even price above
+├── z    how sure we want to be: 2.3 wins 99 fills in 100 with a bell curve, 2.7 with fat tails
+├── σ    how much the rate moves, per √second: 2 bp in the brief
+└── T    seconds a fill is exposed: the window, plus the 24 s delivery if we did not hedge at award
 ```
 
-**Hedging.** When we quote, we buy the destination units we expect to deliver: all of them for the uninformed, part of them for the informed, more as the rate approaches our price. Then a market move does not hit every open quote at once. Hedging makes results steadier; it does not make money, and it cannot remove the cost of the option: if we buy everything up front, we lose instead when the informed walk away after the rate has fallen.
+With the brief's numbers the cushion is 25 bp for a 5 s window and 83 bp for 5 min. Alone we could charge more, up to what customers bear; this is the least that makes the settler win.
+
+**Competing.** The customer takes the best price, so a cushion on every fill would lose nearly every auction. We protect the day instead: over the day's n independent fills the moves average out, so the same cushion is shared by n. Then we go one tick under the best rival, and never below that floor.
+
+```math
+Q_{\text{comp}} \;=\; \max\!\Big(\,Q^{*}\big(1 + z\,\sigma\sqrt{T/n}\,\big),\;\; Q_{\text{rival}} - \varepsilon\Big)
+```
+
+*Just under the best rival, never below break-even plus the day's cushion.*
+
+```
+Q_comp   the price we quote against rivals
+├── z, σ, T   as above
+├── n         independent price moves in a day: fills open at the same time share one move,
+│             so about a day divided by T (270 for a 5 min window, 3,000 for 5 s)
+├── Q_rival   the best price anyone else is quoting
+└── ε         one price tick: the least that still beats the rival
+```
+
+With the brief's numbers the floor is 0.5 bp above break-even for 5 s and 5 bp for 5 min. When the rival is below our floor we quote the floor and lose that auction on purpose.
+
+Gas varies too (5 to 20 per fill), but it does not move with the market and in production we read it off the chain when we quote, so the cushion is about the rate alone: a rate move is unknown in advance and hits every open quote at once.
+
+**Hedging.** We hedge a quote the moment it is awarded, with a perpetual future (long the coin we have to buy, short the one we have to sell), and close the hedge when we exchange the units. That locks the rate from award to delivery and takes the 24 s out of T. We do not hedge at quote time: against rivals most quotes are lost, and even alone three in ten are never taken, so hedging each one would cost more in fees than the risk it removes; the window stays in T and the cushion pays for it. Only when many long quotes are open at once do we hedge their net sum, in bands. Hedging makes results steadier; it does not make money, and it cannot remove the option: a hedge placed at quote time loses exactly when the informed walk away.
 
 This section is not simulated (the brief's market has no rivals, and its uninformed originators ignore the price); its numbers are rough orders of magnitude.
 
