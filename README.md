@@ -11,14 +11,52 @@ A firm quote that cannot be withdrawn is an option written for free. This repo p
 
 ## Pricing the time in a firm quote
 
-A quote at price Q = R₀(1+m), held for W seconds, hands the originator a call on the rate: strike K = 1+m, expiry W, premium zero. On a fill we earn N·(1 − X/K) − gas, with X = R_exec / R₀.
+A quote at price Q, held for W seconds, hands the originator a call on the rate: strike = our price, expiry = W, premium zero. The whole model is one balance:
 
-- **Uninformed originators (70 %)** award at a random time whatever the price, so E[X] ≈ 1 and they only need to pay for gas: m_G = Ḡ / (N − Ḡ) = **126.6 bp** (the spec's gas is 1.25 % of a payment).
-- **Informed originators (30 %)** award only if the rate beat our price: a short call. We price it with **Bachelier** (additive moves, the short-horizon option model) and give the move a standard deviation σ√W and a **Student-t shape** with ν degrees of freedom, variance-matched (a t is a Gaussian whose variance is uncertain; ν = ∞ is the Gaussian the spec simulates):
+```math
+\begin{gathered}
+Q = R_0\,(1+m) \\[10pt]
+\underbrace{\underbrace{(1-p)}_{70\%}\,\big(\underbrace{M}_{\text{markup}} - \underbrace{G}_{\text{gas}}\big)}_{\text{what the uninformed pay}}
+\;=\;
+\underbrace{\underbrace{p}_{30\%}\,\big(\underbrace{V}_{\text{option}} + \underbrace{q\,G}_{\text{gas on exercise}}\big)}_{\text{what the informed take}}
+\;+\;
+\underbrace{C}_{\text{capital}}
+\end{gathered}
+```
 
-  E[loss] = (N/K)·E[(r − m)⁺] + Ḡ·P(r > m), E[(r − m)⁺] = c·[(ν + a²)/(ν − 1)·f_ν(a) − a·(1 − F_ν(a))], a = m/c, c = σ√W·√((ν−2)/ν).
+*What we earn from the uninformed pays for what the informed take, plus the capital.*
 
-- **Break-even:** (1−p)·E[profit | uninformed] + p·E[profit | informed] − carry = 0, where carry is the cost of capital while the payment is reserved, then locked. m is both the revenue and the strike, so this is a fixed point; profit rises with m, so one bisection solves it.
+```
+Q = R₀ · (1 + m)                       the price we quote
+├── R₀   the market rate now
+└── m    our markup: the one that balances the scale
+     │
+     │   (1 − p)·(M − G)  =  p·(V + q·G)  +  C
+     │
+     ├── WHAT WE EARN: uninformed originators
+     │   ├── 1 − p = 70 %   accept at a random time, whatever the price
+     │   ├── M   what we earn per payment at markup m        (N·m/(1+m), N = 1,000)
+     │   └── G   average gas per payment                     (12.5, 1.25 %)
+     │        └── with only this side: M = G  →  m = 126.6 bp, the gas floor
+     │
+     └── WHAT WE LOSE
+         ├── p = 30 %   informed originators: they only accept when we already lose
+         ├── V   the option we give away: how far, on average, the rate overshoots our price
+         │   ├── m       how far our price sits from the market (more markup, cheaper option)
+         │   ├── σ√W     one normal move over the window (σ = 2 bp/√s, W = 5 s to 5 min)
+         │   ├── ν = 4   fat tails (Student-t); ν = ∞ is the spec's Gaussian
+         │   └── priced with Bachelier, the short-horizon option formula
+         ├── q·G   the gas we pay when the informed exercise (q = probability they do)
+         └── C     cost of the capital tied up (10 %/yr, under 0.01 bp)
+```
+
+m sits on both sides (it is our income and our strike), so a bisection finds it (`src/pricing.rs`). With the spec's gas V is almost zero: m ≈ 126.6 bp and the window barely matters. With gas ÷ 10, V matters: m rises from 12.5 to 17.2 bp.
+
+<details>
+<summary>The closed form behind V and q</summary>
+
+The move over the window is r = c·T with T Student-t(ν) and c = σ√W·√((ν−2)/ν), so its variance is σ²W (a t is a Gaussian whose variance is uncertain). With a = m/c: E[(r − m)⁺] = c·[(ν + a²)/(ν − 1)·f_ν(a) − a·(1 − F_ν(a))], q = 1 − F_ν(a), and V = N/(1+m)·E[(r − m)⁺]. As ν → ∞ this is the Gaussian Bachelier call σ√W·[φ(a) − a·Φ(−a)]. In the code M also carries the spec's small upward drift, 1 + σ²(W/4 + L/2) (0.03 bp at 300 s), and C = 10 %/yr × N × the seconds a payment is reserved, then locked.
+</details>
 
 We quote ν = 4 as a placeholder for a tape we have not seen (where minute-scale crypto returns tend to sit); against the spec's Gaussian it over-charges 0.24 bp at 300 s and nothing at 5 s. In production σ would come from an EWMA of the tape, and p, q and ν from **markouts** of quotes (walk-aways plus awards at the deadline give p, their ratio gives q, the depth of the deadline markouts picks ν). For a pinned corridor (stablecoin to stablecoin) the rate mean-reverts: an Ornstein–Uhlenbeck process caps the move at σ/√(2κ) and with it the price of time (a slider on the interactive page).
 
@@ -32,7 +70,7 @@ We quote ν = 4 as a placeholder for a tape we have not seen (where minute-scale
 | model, Student-t ν = 4 (bp) | 126.593 | 126.612 | 126.880 |
 | engine on the spec market (bp) | 126.593 ± 0.0002 | 126.600 ± 0.0005 | 126.648 ± 0.033 |
 
-Why it is flat: gas puts our price 126.6 bp above the market while the rate moves 35 bp in five minutes, so the informed originator needs a 3.6σ move and the option is worth 0.01 bp. Of the +0.05 bp from 5 s to 5 min under the Gaussian, 0.030 is the spec's drift (exp(σZ) steps have mean exp(σ²/2)), 0.009 is carry and 0.008 is the option; under t(4) the option alone is 0.25 bp, about 30× the Gaussian figure. The expected markout of an informed fill, C/q, is 8 bp under the Gaussian and 46 bp under t: the number a desk watches. Divide gas by ten and the strike sits 0.5σ away: the markup climbs 12.5 → 17.2 bp, and there the variance-matched t is *cheaper* (16.6 bp), because matching the variance thins the body to fatten the tail; fat tails cost more only once the strike is past ≈1.2σ for the call itself, ≈1.7σ for the markup once the gas paid on exercise is included. The spec curve starts to bend at W ≈ (ln K / 2σ)² ≈ 16 min, 4 min if σ doubles.
+Why it is flat: gas puts our price 126.6 bp above the market while the rate moves 35 bp in five minutes, so the informed originator needs a 3.6σ move and the option is worth 0.01 bp. Of the +0.05 bp from 5 s to 5 min under the Gaussian, 0.030 is the spec's drift (exp(σZ) steps have mean exp(σ²/2)), 0.009 is carry and 0.008 is the option; under t(4) the option alone is 0.25 bp, about 30× the Gaussian figure. The expected markout of an informed fill, V/q, is 8 bp of the payment under the Gaussian and 46 bp under t: the number a desk watches. Divide gas by ten and the strike sits 0.5σ away: the markup climbs 12.5 → 17.2 bp, and there the variance-matched t is *cheaper* (16.6 bp), because matching the variance thins the body to fatten the tail; fat tails cost more only once the strike is past ≈1.2σ for the call itself, ≈1.7σ for the markup once the gas paid on exercise is included. The spec curve starts to bend at W ≈ (ln K / 2σ)² ≈ 16 min, 4 min if σ doubles.
 
 **Stability.** The ± is a 60-batch t-interval; the Gaussian model sits inside it at all 11 gas ÷ 10 points and at spec gas up to 180 s. At spec gas an informed exercise needs a 3.6σ move inside the window, so this run saw none for W ≤ 240 s and 38 at 300 s, nearly all in one batch: those two dots check gas, drift and carry only, and on other seeds the model can fall outside their interval. The option term is checked on the gas ÷ 10 panel (hundreds of exercises at 5 s, thousands from 10 s on). All points share one seed, so their errors are correlated.
 
